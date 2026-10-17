@@ -1,0 +1,140 @@
+name: CI
+
+# Linux: headless tests, vet, cave/replay validation, compile checks.
+# macOS arm64: tests on the target architecture, native build, unsigned
+# .app artifact. Neither job opens a window: a green run means "compiles,
+# tests pass, packages", never "GUI tested". GUI behaviour needs a human
+# Mac playtest (see docs/ROADMAP.md).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux · test, vet, validate, cross-compile
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install Ebitengine cgo build headers (compile only; no display is used)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgl1-mesa-dev libxcursor-dev libxi-dev libxinerama-dev libxrandr-dev libxxf86vm-dev
+
+      - name: Toolchain
+        run: go version
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test (headless)
+        run: go test -count=1 ./...
+
+      - name: go test -race (pure packages)
+        run: go test -count=1 -race ./internal/... ./cmd/cavetool
+
+      - name: internal/sim has no non-standard dependencies
+        run: |
+          extra="$(go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./internal/sim | grep -v '^github.com/townhill/deep-shift/internal/sim$' || true)"
+          if [ -n "$extra" ]; then
+            echo "internal/sim must stay pure Go; it depends on:"; echo "$extra"; exit 1
+          fi
+
+      - name: Validate caves and golden replays (CLI, no display)
+        run: |
+          go run ./cmd/cavetool validate
+          go run ./cmd/cavetool replay testdata/replays/*.json
+
+      - name: Simulation benchmark (recorded, not gated)
+        run: go test -run '^$' -bench . -benchtime 20000x ./internal/sim
+
+      - name: Build (linux, cgo)
+        run: go build ./...
+
+      - name: Cross-compile macOS (CGO_ENABLED=0; compile check only)
+        run: |
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o /dev/null ./cmd/deepshift
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o /dev/null ./cmd/deepshift
+
+  macos:
+    name: macOS arm64 · test, build, package unsigned .app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Toolchain and runner
+        run: |
+          go version
+          sw_vers
+          test "$(uname -m)" = arm64
+
+      - name: go vet
+        run: go vet ./...
+
+      # Also proves the golden state hashes match on darwin/arm64.
+      - name: go test
+        run: go test -count=1 ./...
+
+      - name: Build and package DeepShift.app (unsigned development build)
+        run: scripts/build-macos-app.sh arm64
+
+      - name: Inspect bundle
+        run: |
+          app=dist/DeepShift.app
+          file "$app/Contents/MacOS/deepshift"
+          test "$(lipo -archs "$app/Contents/MacOS/deepshift")" = arm64
+          plutil -lint "$app/Contents/Info.plist"
+          # The binary's minimum macOS must match LSMinimumSystemVersion.
+          minos="$(otool -l "$app/Contents/MacOS/deepshift" | awk '/LC_BUILD_VERSION/{f=1} f && /minos/{print $2; exit}')"
+          plist_min="$(plutil -extract LSMinimumSystemVersion raw "$app/Contents/Info.plist")"
+          echo "binary minos=$minos, LSMinimumSystemVersion=$plist_min"
+          test "$minos" = "$plist_min"
+          codesign --display --verbose=2 "$app"
+          codesign --verify --strict --verbose=2 "$app"
+
+      # Runs the bundled executable without opening a window. This shows the
+      # binary loads and starts on macOS arm64; it is not a GUI test.
+      - name: Start the bundled binary headlessly (-version)
+        run: dist/DeepShift.app/Contents/MacOS/deepshift -version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeepShift-macos-arm64-unsigned-dev
+          path: dist/DeepShift-macos-arm64.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          {
+            echo "### macOS arm64 build"
+            echo "- Tests and vet: passed on \`$(sw_vers -productVersion)\` / arm64"
+            echo "- Artifact: \`DeepShift-macos-arm64-unsigned-dev\` (ad-hoc signed, **not** notarised)"
+            echo "- **Not GUI-tested in CI.** Window, input, rendering and audio need a hands-on Mac playtest."
+          } >> "$GITHUB_STEP_SUMMARY"
