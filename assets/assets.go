@@ -20,7 +20,7 @@ const LevelDir = "levels"
 const TestCave = "levels/test_cave.json"
 
 // Campaign lists the main caves in play order: SPEC §8's starter caves.
-var Campaign = []string{"cave_01", "cave_02", "cave_03", "cave_04"}
+var Campaign = []string{"cave_01", "cave_02", "cave_03", "cave_04", "cave_05"}
 
 // Extras lists embedded caves outside the campaign. The Phase 1 test cave
 // stays playable here because its golden replays pin the rule-1 behaviour.
