@@ -8,14 +8,18 @@ browser, Electron, server or database.
 The game takes design inspiration from the *rules-driven* arcade cave games of the 1980s. All of its code,
 caves, art, names and rules are original to this project.
 
-> **Status: Phases 0–4 delivered in the cloud: a five-cave vertical slice that still needs its Mac
-> playtest.** Movement, digging, crystals, walls and a quota-sealed exit, plus:
+> **Status: Phases 0–4 and Phase 5's creature delivered in the cloud: a five-cave vertical slice plus
+> crawlers, all still needing their Mac playtest.** Movement, digging, crystals, walls and a quota-sealed
+> exit, plus:
 >
 > - **gravity:** boulders and crystals fall, roll and crush, and boulders can be pushed;
 > - **water:** it falls and spreads, is conserved exactly, and is too deep to wade when a cell is full;
-> - **sluice gates** that a valve opens and closes.
+> - **sluice gates** that a valve opens and closes;
+> - **crawlers:** creatures that follow the wall on their left and catch you, but can be crushed by a
+>   falling boulder or drowned.
 >
-> The campaign has five caves, plus the "Proving Ground" test cave as an extra:
+> The campaign has five caves, plus two extras, "Crawler Warren" (crawlers) and the "Proving Ground" test
+> cave:
 >
 > 1. "First Descent" (movement, digging, crystals, the exit);
 > 2. "Unstable Ground" (falling boulders);
@@ -24,8 +28,7 @@ caves, art, names and rules are original to this project.
 > 5. "The Sluice" (water and gravity, two ways through).
 >
 > There's a title menu and a cave list, pause/restart, a HUD, sound effects, a performance overlay, and
-> automatic replays of finished attempts. There are no creatures yet, and progress is not saved between
-> runs. See [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
+> automatic replays of finished attempts. Progress is not saved between runs. See [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
 
 ## What has and has not been verified
 
@@ -34,15 +37,16 @@ caves, art, names and rules are original to this project.
 | Rules: movement, bounds, walls, digging, collecting, exit quota, restart | `go test ./...` (table-driven, headless) | Verified on Linux; CI also runs them on macOS arm64 |
 | Gravity: boulders and crystals fall, roll (left first) and crush; boulders push (no chains); at most one move per tick | `go test ./...`, randomised invariant runs, golden fixtures | Verified on Linux; CI runs them on macOS arm64 |
 | Water: falls then spreads with no left/right bias, conserved every tick, contained by every barrier, displaced by objects; gates and valves | `go test ./...` (hand-computed cases, mirror test, randomised invariants), cave 04 fixture | Verified on Linux; CI runs them on macOS arm64 |
-| Determinism: 100 identical runs → identical hashes at every tick, including a death, a reservoir drain and a boulder pushed through water | `internal/replay` test + golden fixtures | Verified (Linux); CI checks the same golden hashes on macOS arm64 |
+| Crawlers: left-hand rule, one move per step, catching both ways, crushed by falling objects only, drowned by water, reset | `go test ./...` (hand-computed paths, randomised invariants, mutation-checked), Crawler Warren fixtures and timing sweeps | Verified on Linux; CI runs them on macOS arm64 |
+| Determinism: 100 identical runs → identical hashes at every tick, including deaths by crush and by crawler, a reservoir drain, a boulder pushed through water, and crawlers crushed and drowned | `internal/replay` test + golden fixtures | Verified (Linux); CI checks the same golden hashes on macOS arm64 |
 | Every cave can be completed; cave 05 has two distinct routes; cave 01 cannot hurt the player | Golden replays plus tests on each route's events and water state | Verified (Linux); CI runs them on macOS arm64 |
 | Menus: title, cave list, keys that chose an entry never leak into the game | `internal/game` shell tests; headless capture | Verified (Linux) |
-| Sound: ten original synthesised cues, one per kind of event per tick | `internal/sfx` tests; in a headless capture the app's audio streams matched the synthesised cues sample for sample | Verified as data (Linux VM guest); **not yet heard on a Mac** |
+| Sound: twelve original synthesised cues, one per kind of event per tick | `internal/sfx` tests; in a headless capture the app's audio streams matched the synthesised cues sample for sample | Verified as data (Linux VM guest); **not yet heard on a Mac** |
 | A finished attempt is saved as a replay that reproduces it exactly | Session tests; app run headlessly (below) | Verified (Linux) |
 | Cave files validate; broken caves give useful errors | `internal/level` tests, `cavetool validate` | Verified |
 | macOS arm64 / amd64 executables compile | Cross-compile from Linux; native build on CI's macOS runner | Compile-only |
 | `DeepShift.app` bundle builds and is ad-hoc signed | `scripts/build-macos-app.sh` on CI's macOS runner | Packaging checked in CI; **launch from Finder not yet verified** |
-| Window, keyboard, rendering, HUD on a real Mac | Owner ran `go run ./cmd/deepshift` on a Mac: "ok as a first pass" (Phase 1 build) | First pass only; **menus, sound, caves 01–05, boulders and water not yet played on a Mac** |
+| Window, keyboard, rendering, HUD on a real Mac | Owner ran `go run ./cmd/deepshift` on a Mac: "ok as a first pass" (Phase 1 build) | First pass only; **menus, sound, caves 01–05, boulders, water and crawlers not yet played on a Mac** |
 | 60 FPS on a reference Apple Silicon Mac | The in-game performance overlay (`` ` `` or F3) measures it | **Not yet measured** |
 | Rendering + key handling of the real app on Linux (Xvfb, Mesa software GL) | Ebitengine `exp/vmhost` headless capture, run once by hand | Observed in the cloud session; not macOS, not in CI ([D-014](docs/DECISIONS.md#d-014-ebitengine-expvmhost-headless-capture-assessed-not-adopted)) |
 
@@ -108,7 +112,7 @@ release milestone.
 
 WASD uses physical key positions, so it stays under the same fingers on non-US layouts.
 
-N plays the caves in order: `cave_01` to `cave_05`, then the `test_cave` extra. To skip the menu and start a
+N plays the caves in order: `cave_01` to `cave_05`, then the `crawler_warren` and `test_cave` extras. To skip the menu and start a
 cave directly, run `go run ./cmd/deepshift -cave cave_03`. To play your own cave file, run
 `go run ./cmd/deepshift -cave path/to/cave.json`; validation errors are printed to the terminal.
 
@@ -139,9 +143,18 @@ restarts.
 - Earth holds water back until you dig it.
 - A boulder pushed into water shoves the water behind it, so you can follow it through a flooded tunnel.
 
+**Rules of thumb for crawlers:**
+
+- A crawler keeps the wall on its **left**. Watch it go round once and you know its path.
+- It catches you by stepping into your cell, and walking into it is just as bad. Standing **next** to one
+  is safe.
+- A pocket or tunnel on a crawler's right is a safe place to wait: it only turns right when it must.
+- A falling boulder or crystal crushes it; a resting one doesn't.
+- It never steps into water, and water that reaches it drowns it.
+
 The full rules are in [docs/PHYSICS.md](docs/PHYSICS.md).
 
-**Replays:** every finished attempt, completed or crushed, is saved to
+**Replays:** every finished attempt, completed, crushed or caught, is saved to
 `~/Library/Application Support/Deep Shift/replays/`. The HUD shows the file name. Run
 `go run ./cmd/cavetool replay <file>` to re-run one exactly. `-replay-dir <dir>` changes the folder, and
 `-replay-dir ""` turns saving off.
@@ -192,7 +205,7 @@ docs/                 SPEC, ROADMAP, DECISIONS, PHYSICS
 ## Documentation
 
 - [docs/SPEC.md](docs/SPEC.md) — the game design and technical specification (source of truth)
-- [docs/PHYSICS.md](docs/PHYSICS.md) — the rules as actually implemented (rule version 3)
+- [docs/PHYSICS.md](docs/PHYSICS.md) — the rules as actually implemented (rule version 4)
 - [docs/DECISIONS.md](docs/DECISIONS.md) — decisions and deviations, with rationale
 - [docs/ROADMAP.md](docs/ROADMAP.md) — phase status, playtest checklist and follow-ups
 - [CLAUDE.md](CLAUDE.md) — working rules for coding agents

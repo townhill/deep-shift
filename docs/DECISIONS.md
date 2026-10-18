@@ -594,3 +594,118 @@ boulder-specific.
 - **Other runs:**
   - `-no-audio` runs with no audio streams;
   - the performance overlay draws legibly (its numbers are meaningless under the driver, D-039).
+
+## D-040: Phase 5 starts with the creature only (owner decision)
+
+- SPEC §11 Phase 5 lists a cave editor, a wall-following creature, structural supports, optional level
+  selection, local preferences and a visual theme, "prioritised on prototype feedback". On 2026-10-18 the
+  owner chose the **creature** for this branch, as one focused change.
+- Level selection already exists (the Phase 4 cave list, D-037). The editor, supports, preferences and
+  theme are not started.
+- The Mac playtests of Phases 2 to 4 are still pending (D-033). Tuning they ask for still needs its own
+  rule version.
+
+## D-041: Crawlers (rule version 4)
+
+SPEC §6.5 asks for "a deterministic wall-following organism or simple patrol", implemented after gravity
+and water are stable, with tests for movement order, collision and reset.
+
+- **Left-hand rule.** Each crawler step tries left, ahead, right, behind relative to its facing and takes
+  the first open cell. It is the simplest rule that follows walls, needs no memory beyond a facing, and
+  is readable: a player can predict where it goes next. Open space makes it turn in a 2×2 square, which is
+  also predictable. It never draws from the PRNG.
+- **Cadence:** a step every `CrawlerIntervalTicks = 6` ticks (3.3 cells/s), slower than the player's 4, so
+  the player can outpace and follow one. It is a multiple of the gravity interval, so crawler steps happen
+  inside world steps. Provisional, to tune in the Mac playtest.
+- **Order:** player, gravity, crawlers, water, drowning, quota.
+  - Gravity first: a boulder falling into a cell a crawler wanted is already there.
+  - Crawlers judge water as the last water step left it, and never step into any.
+  - Drowning after the water phase, so water arriving this step drowns this step.
+  - Crawlers are scanned row by row from the top. A cell a crawler moved into is skipped by the rest of the
+    scan, so each moves at most once. Of two crawlers wanting one cell, the first in the scan gets it.
+- **Danger only on contact.** A crawler catches the player by stepping into their cell; walking into a
+  crawler is equally fatal. Standing next to one is safe. The rule makes threats visible (a crawler must
+  be heading at you) and gives safe spots: openings on a crawler's right are only taken when its left and
+  ahead are blocked.
+- **A catch ends the crawler step,** so nothing else moves after the player is caught. The rest of the
+  world step (water, drowning) still runs, as after a crush.
+- **Crushing follows the player's rule:** only a falling object crushes, and it falls on into the cell. A
+  crawler under a resting boulder holds it up.
+- **Water:** crawlers refuse any water, even one unit, and drown when water reaches them. Flooding becomes
+  a tool against them, the "demonstrated interaction with a pre-existing system" SPEC §7 asks for.
+- **No gravity for crawlers:** they cling to walls, so vertical patrols (shafts) work like corridors.
+- **State:** a crawler's facing is a new cell field, hashed (layout v4, one more byte per cell). It is
+  needed to replay a crawler's path, so it is part of the state.
+- **Fixture review:** all nine earlier golden replays have no crawlers. Traced on master and on this
+  build, they agree on every tick's events and grid. Only `rule_version` and the two hashes changed, from
+  the new layout and rule version.
+
+## D-042: Cave format version 4
+
+- Rows may contain a crawler, written as the arrow of the way it starts facing: `↑` `↓` `←` `→`. Arrows put
+  the facing, part of the initial state, in the grid where a designer sees it. The dumps (`cavetool show`,
+  traces) use the same arrows, so a cave file and its dump read alike.
+- These are the first non-ASCII symbols. Cave files are UTF-8 JSON, and widths count symbols (runes), not
+  bytes, as they already did.
+- An arrow in a file below version 4 is rejected with the version it needs. Older files are unchanged.
+- `cavetool validate` reports crawler counts.
+
+## D-043: Crawler Warren, the example cave
+
+- SPEC §7: every new system needs documented behaviour, deterministic tests, at least one example cave and
+  a demonstrated interaction with an existing system. SPEC §8 fixes the five starter caves, so the
+  example is an **extra**, listed before the Proving Ground. The campaign is unchanged.
+- **Three lessons, one crawler each,** 30×16 so it fits on one screen, quota 5 of 6:
+  1. **The ring:** a crawler circles a pillar anticlockwise, the pillar on its left. Three crystals sit in
+     pockets on its right, safe places to wait while it passes. The way in, dug from above, is also on its
+     right. The quota needs at least two of these crystals.
+  2. **The drop:** a crawler paces a one-wide shaft, the only way down. A boulder pushed in falls three
+     times as fast as the crawler moves and always crushes it. The only refusal is when the crawler is in
+     the top cell, blocking the push.
+  3. **The flood:** a crawler paces a five-cell corridor in front of the exit. The valve drops nine units
+     of water into its middle. On a flat floor, water settles as a slope of one unit per cell (D-027), so
+     nine units become `12321`: the whole corridor gets wet, so the crawler drowns, and no cell is deep, so
+     the player can wade through. More water would leave a deep cell under the gate and block the way; a
+     longer corridor would leave dry ends where a crawler could survive.
+- **Evidence:** a completion replay and a death-by-crawler replay, both in the 100-run determinism check.
+  - Tests sweep the push and the valve turn over a whole patrol: every timing crushes, or drowns, the
+    crawler, and the flood always settles `12321`.
+  - A flood fill that may dig any earth and pass any boulder, but avoids the shaft, cannot reach the lower
+    half.
+- The first draft flooded an eleven-cell corridor from 24 units. It left a deep cell under the gate and
+  blocked the exit. The planner found this before any replay was recorded.
+
+## D-044: Presenting crawlers
+
+- **Sprite:** an original six-legged cave beetle, drawn in code like every other sprite, in violet so it
+  stands apart from the teal player, cyan crystals and grey boulders. Its head, glowing eyes and feelers
+  point the way it faces: one drawing, turned four ways, which a test checks. The shape (legs, segments)
+  differs from every other sprite, not only the colour.
+- **Movement:** a crawler glides between cells over its whole step (18 updates), so a patrol reads as
+  continuous. A crushed or drowned crawler stops being drawn at once. The same fix applies to a crystal
+  collected while still gliding into its cell, which could briefly linger before (a test now checks that
+  every gliding sprite is heading for a cell that really holds it, through three whole fixtures).
+- **Death screen:** deaths now have a cause. CAUGHT says whether the player walked into a crawler or a
+  crawler caught them, and repeats the left-hand rule. The caught player is drawn shrunk and violet
+  rather than squashed. Logged replays say "was caught by a crawler".
+- **Prompts:** a crawler cave opens with "Crawlers keep the wall on their left: stay out of their way".
+  Crushed and drowned crawlers are announced.
+- **Sound:** two new cues, a chittering bite for a catch and a wet pop when a crawler is crushed or
+  drowned. Walking crawlers are silent, like falling objects: they move too often for a sound to carry
+  information. So an approaching crawler can only be seen, not heard (follow-up F-21).
+
+## D-014 addendum: Phase 5 headless capture (2026-10-18)
+
+- The by-hand `exp/vmhost` setup (Linux, Xvfb, Mesa software GL; nothing committed) drove the unmodified app
+  through both Crawler Warren fixtures. The driver had to be rebuilt in a fresh container. Its fixture
+  playback now waits one update first, because the shell ignores input until every key is released
+  (D-037), and a key held on the very first update was being dropped.
+- **Death by crawler:** the crawler glides along the corridor facing the player; the CAUGHT overlay shows
+  the left-hand hint and the violet, shrunk player. Audio: dig, collect and the new caught cue, each
+  matching its synthesised samples exactly.
+- **Completion:** the boulder falls down the shaft as "A falling boulder crushed a crawler" shows; the
+  sluice water drops into the corridor as "The water drowned a crawler" shows, and settles as a visible
+  1-2-3-2-1 pool; CAVE COMPLETE reads 6 crystals in 0:39, the fixture's tick 797. Audio: nine streams,
+  each an exact cue match: dig, collect, push, crawler gone, land, exit open, valve, gate and complete.
+- **Menus:** the cave list shows Crawler Warren under Extras, before the Proving Ground.
+- Linux/OpenGL evidence only, not a Mac test.

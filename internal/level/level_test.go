@@ -79,8 +79,12 @@ func TestInvalidLevelsFailWithUsefulErrors(t *testing.T) {
 			want: []string{`field "seed" must be an integer`}},
 		{name: "missing format_version", mutate: func(d map[string]any) { delete(d, "format_version") },
 			want: []string{"format_version: missing"}},
-		{name: "future format_version", mutate: func(d map[string]any) { d["format_version"] = 4 },
-			want: []string{"unsupported version 4", "reads format_version 1 to 3"}},
+		{name: "crawler in a version 3 file", mutate: func(d map[string]any) {
+			d["format_version"] = 3
+			d["rows"] = []string{"#####", "#@*E#", "#→ ←#"}
+		}, want: []string{"rows[2]: symbol(s) '→' at x=1, '←' at x=3 need format_version 4 or later (this file is version 3)"}},
+		{name: "future format_version", mutate: func(d map[string]any) { d["format_version"] = 5 },
+			want: []string{"unsupported version 5", "reads format_version 1 to 4"}},
 		{name: "format_version zero", mutate: func(d map[string]any) { d["format_version"] = 0 },
 			want: []string{"unsupported version 0"}},
 		{name: "missing id", mutate: func(d map[string]any) { delete(d, "id") }, want: []string{"id: missing"}},
@@ -195,6 +199,32 @@ func TestVersion3ReadsWaterGatesAndValves(t *testing.T) {
 	}
 	if v, ok := s.AdjacentValve(); !ok || v != (sim.Pos{X: 2, Y: 1}) {
 		t.Fatalf("AdjacentValve = %s, %v", v, ok)
+	}
+}
+
+func TestVersion4ReadsCrawlers(t *testing.T) {
+	doc := baseDoc()
+	doc["format_version"] = 4
+	doc["rows"] = []string{"#####", "#@*E#", "#↑→↓#", "#←  #", "#####"}
+	doc["height"] = 5
+	l, err := Parse("v4.json", encode(t, doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := sim.New(l.Cave(), l.Seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		p sim.Pos
+		d sim.Dir
+	}{{sim.Pos{X: 1, Y: 2}, sim.DirUp}, {sim.Pos{X: 2, Y: 2}, sim.DirRight}, {sim.Pos{X: 3, Y: 2}, sim.DirDown}, {sim.Pos{X: 1, Y: 3}, sim.DirLeft}} {
+		if got := s.Cell(c.p); got.Occupant != sim.OccupantCrawler || got.Facing != c.d {
+			t.Fatalf("cell %s = %+v, want a crawler facing %s", c.p, got, c.d)
+		}
+	}
+	if s.Crawlers() != 4 || s.ASCII() != "#####\n#@*E#\n#↑→↓#\n#←  #\n#####\n" {
+		t.Fatalf("%d crawlers:\n%s", s.Crawlers(), s.ASCII())
 	}
 }
 

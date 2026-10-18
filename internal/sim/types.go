@@ -11,7 +11,9 @@ import "fmt"
 //     be pushed.
 //   - 3: water flows (falls, then spreads) and is conserved; sluice gates
 //     opened and closed by valves; deep water blocks the player.
-const RuleVersion uint32 = 3
+//   - 4: crawlers, wall-following creatures that catch the player, are
+//     crushed by falling objects and drown in water.
+const RuleVersion uint32 = 4
 
 // TicksPerSecond is the provisional logical simulation rate (SPEC §5).
 const TicksPerSecond = 20
@@ -25,6 +27,13 @@ const MoveIntervalTicks = 4
 // whose number is a multiple of this (10 cells per second at 20 TPS, twice
 // the player's walking speed). Provisional; tune after Mac playtesting.
 const GravityIntervalTicks = 2
+
+// CrawlerIntervalTicks is the crawlers' cadence: they step on every tick
+// whose number is a multiple of this (one cell per 6 ticks, about 3.3 cells
+// per second, slower than the player). It is a multiple of
+// GravityIntervalTicks, so crawler steps fall on world-phase ticks.
+// Provisional; tune after Mac playtesting.
+const CrawlerIntervalTicks = 6
 
 // WaterCapacity is the most water one cell holds. A full cell is deep water,
 // which the player cannot wade into. Provisional; see docs/PHYSICS.md.
@@ -93,6 +102,7 @@ const (
 	OccupantPlayer
 	OccupantCrystal
 	OccupantBoulder
+	OccupantCrawler
 	occupantCount
 )
 
@@ -106,6 +116,8 @@ func (o Occupant) String() string {
 		return "crystal"
 	case OccupantBoulder:
 		return "boulder"
+	case OccupantCrawler:
+		return "crawler"
 	}
 	return fmt.Sprintf("occupant(%d)", uint8(o))
 }
@@ -129,8 +141,12 @@ type Cell struct {
 	// false for other occupants.
 	Falling bool
 	// Water is the fluid layer: 0..WaterCapacity units. Water shares a cell
-	// with the player but never with a boulder or crystal.
+	// with the player but never with a boulder or crystal. Water reaching a
+	// crawler drowns it by the end of the tick.
 	Water uint8
+	// Facing is metadata for crawlers: the direction the crawler last moved
+	// (or starts facing). DirNone for every other occupant.
+	Facing Dir
 }
 
 // Empty reports whether a falling object could move into c: open floor with
@@ -144,6 +160,12 @@ func (c Cell) HoldsWater() bool { return c.Terrain.Floor() && !c.Occupant.Falls(
 // Deep reports whether c is full of water, too deep for the player to wade
 // into.
 func (c Cell) Deep() bool { return c.Water >= WaterCapacity }
+
+// OpenToCrawler reports whether a crawler may move into c: dry open floor
+// with no occupant other than the player (whom it catches).
+func (c Cell) OpenToCrawler() bool {
+	return c.Terrain.Floor() && c.Water == 0 && (c.Occupant == OccupantNone || c.Occupant == OccupantPlayer)
+}
 
 // Pos is an integer grid coordinate. The origin is the upper-left cell and Y
 // grows downward (the direction of gravity).

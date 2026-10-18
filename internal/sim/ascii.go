@@ -20,13 +20,18 @@ const (
 	SymbolValveOpen  = 'v'
 )
 
+// Crawlers are written as an arrow showing which way they face, in level
+// rows (format_version 4 or later) and in dumps.
+var crawlerSymbols = [...]rune{DirUp: '↑', DirDown: '↓', DirLeft: '←', DirRight: '→'}
+
 // Shallow water on empty floor is written as its amount, '1' to '3'
 // (WaterCapacity-1). Water, gates and valves need format_version 3 or later.
 
 // SymbolLegend describes the symbols accepted in level rows, for error
 // messages and documentation.
 const SymbolLegend = `'#' wall, '.' earth, ' ' empty, '*' crystal, '@' player start, 'E' exit, 'O' boulder, ` +
-	`'~' deep water, '1'-'3' shallow water, 'G'/'g' closed/open gate, 'V'/'v' shut/open valve`
+	`'~' deep water, '1'-'3' shallow water, 'G'/'g' closed/open gate, 'V'/'v' shut/open valve, ` +
+	`'↑' '↓' '←' '→' crawler facing that way`
 
 // CellForSymbol maps a level-file symbol to its initial cell. Crystals,
 // boulders, water and the player start on empty terrain; boulders start at
@@ -61,7 +66,18 @@ func CellForSymbol(r rune) (Cell, bool) {
 	case SymbolValveOpen:
 		return Cell{Terrain: TerrainValveOpen}, true
 	}
+	for d := DirUp; d <= DirRight; d++ {
+		if r == crawlerSymbols[d] {
+			return Cell{Terrain: TerrainEmpty, Occupant: OccupantCrawler, Facing: d}, true
+		}
+	}
 	return Cell{}, false
+}
+
+// IsCrawlerSymbol reports whether r is one of the crawler arrows.
+func IsCrawlerSymbol(r rune) bool {
+	c, ok := CellForSymbol(r)
+	return ok && c.Occupant == OccupantCrawler
 }
 
 // Symbol returns the dump symbol for c. Occupants take precedence over
@@ -75,6 +91,11 @@ func Symbol(c Cell, exitOpen bool) rune {
 		return SymbolCrystal
 	case OccupantBoulder:
 		return SymbolBoulder
+	case OccupantCrawler:
+		if c.Facing >= DirUp && c.Facing <= DirRight {
+			return crawlerSymbols[c.Facing]
+		}
+		return '?'
 	}
 	switch c.Terrain {
 	case TerrainEmpty:

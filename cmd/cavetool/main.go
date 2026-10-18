@@ -79,6 +79,9 @@ func describe(w io.Writer, source string, l *level.Level) {
 	if water > 0 || len(l.Mechanisms) > 0 {
 		fmt.Fprintf(w, " water=%d mechanisms=%d", water, len(l.Mechanisms))
 	}
+	if n := l.Crawlers(); n > 0 {
+		fmt.Fprintf(w, " crawlers=%d", n)
+	}
 	fmt.Fprintf(w, " checksum=%s\n", l.Checksum())
 }
 

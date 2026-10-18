@@ -4,7 +4,7 @@
 // metadata):
 //
 //	{
-//	  "format_version": 3,          // 1 to 3; see below
+//	  "format_version": 4,          // 1 to 4; see below
 //	  "id": "test_cave",            // ^[a-z0-9][a-z0-9_]*$, at most 64 bytes
 //	  "title": "Proving Ground",    // shown in the HUD, at most 80 characters
 //	  "width": 40, "height": 24,    // 1..256 each
@@ -21,8 +21,10 @@
 // Version 2 adds the boulder 'O'. Version 3 adds water ('~' deep, '1'-'3'
 // shallow), gates ('G' closed, 'g' open) and valves ('V' shut, 'v' open),
 // with mechanisms: every valve and gate is listed in exactly one, and a
-// mechanism's gates are open exactly when its valve is. Older files are
-// still read unchanged and may not contain newer symbols.
+// mechanism's gates are open exactly when its valve is. Version 4 adds
+// crawlers, written as the arrow of the way each starts facing ('↑' '↓' '←'
+// '→'). Older files are still read unchanged and may not contain newer
+// symbols.
 // Each cave must contain exactly one player start '@' and exactly one exit
 // 'E'. Unknown fields are rejected so typos surface instead of being ignored.
 package level
@@ -48,7 +50,7 @@ import (
 
 // FormatVersion is the newest cave file version this build reads; new caves
 // should use it.
-const FormatVersion = 3
+const FormatVersion = 4
 
 // MinFormatVersion is the oldest cave file version this build still reads.
 const MinFormatVersion = 1
@@ -57,8 +59,14 @@ const MinFormatVersion = 1
 // the mechanisms field.
 const mechanismFormatVersion = 3
 
+// crawlerFormatVersion is the first version with crawlers.
+const crawlerFormatVersion = 4
+
 // symbolVersion returns the first format version whose rows may contain r.
 func symbolVersion(r rune) int {
+	if sim.IsCrawlerSymbol(r) {
+		return crawlerFormatVersion
+	}
 	switch r {
 	case sim.SymbolBoulder:
 		return 2
@@ -100,6 +108,9 @@ func (l *Level) Cave() sim.Cave { return l.cave.Clone() }
 
 // Crystals returns the number of crystals in the layout.
 func (l *Level) Crystals() int { return l.cave.CountOccupant(sim.OccupantCrystal) }
+
+// Crawlers returns the number of crawlers in the layout.
+func (l *Level) Crawlers() int { return l.cave.CountOccupant(sim.OccupantCrawler) }
 
 // Checksum fingerprints the gameplay-relevant content: format version,
 // dimensions, seed, quota, rows and mechanisms. Title and metadata are

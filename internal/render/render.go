@@ -100,7 +100,7 @@ func (r *Renderer) drawWorld(f game.Frame) {
 			op.GeoM.Reset()
 			op.GeoM.Translate(float64(x*TileSize)-camX, float64(y*TileSize)-camY)
 			r.world.DrawImage(r.tiles[terrainSprite(cell.Terrain, snap.ExitOpen)], op)
-			if k, ok := objectSprite(cell.Occupant); ok && !gliding[p] {
+			if k, ok := occupantSprite(cell.Occupant, cell.Facing); ok && !gliding[p] {
 				r.world.DrawImage(r.tiles[k], op)
 			}
 		}
@@ -108,7 +108,7 @@ func (r *Renderer) drawWorld(f game.Frame) {
 	// Moving objects and the player are drawn after all terrain, at their
 	// interpolated positions, so the next row's tiles never cover them.
 	for _, g := range f.Gliding {
-		k, ok := objectSprite(g.Object)
+		k, ok := occupantSprite(g.Object, g.Facing)
 		if !ok {
 			continue
 		}
@@ -118,11 +118,18 @@ func (r *Renderer) drawWorld(f game.Frame) {
 	}
 	r.drawWater(f, x0, y0, camX, camY)
 	op.GeoM.Reset()
-	if snap.Status == sim.StatusDead {
-		// Crushed: squashed to the bottom of the cell and tinted red.
+	switch f.Death {
+	case game.DeathCrushed:
+		// Squashed to the bottom of the cell and tinted red.
 		op.GeoM.Scale(1, 0.45)
 		op.GeoM.Translate(0, TileSize*0.55)
 		op.ColorScale.Scale(1, 0.45, 0.45, 1)
+	case game.DeathCaught:
+		// Shrunk to the middle of the cell and tinted violet, like the
+		// crawler that caught them.
+		op.GeoM.Scale(0.7, 0.7)
+		op.GeoM.Translate(TileSize*0.15, TileSize*0.15)
+		op.ColorScale.Scale(0.85, 0.45, 0.85, 1)
 	}
 	px, py := math.Round(f.PlayerX*TileSize-camX), math.Round(f.PlayerY*TileSize-camY)
 	op.GeoM.Translate(px, py)
@@ -169,13 +176,24 @@ func (r *Renderer) drawWater(f game.Frame, x0, y0 int, camX, camY float64) {
 	}
 }
 
-// objectSprite returns the sprite for a boulder or crystal occupant.
-func objectSprite(o sim.Occupant) (sprites.Kind, bool) {
+// occupantSprite returns the sprite for a boulder, crystal or crawler (by
+// its facing). The player is drawn separately.
+func occupantSprite(o sim.Occupant, facing sim.Dir) (sprites.Kind, bool) {
 	switch o {
 	case sim.OccupantCrystal:
 		return sprites.Crystal, true
 	case sim.OccupantBoulder:
 		return sprites.Boulder, true
+	case sim.OccupantCrawler:
+		switch facing {
+		case sim.DirDown:
+			return sprites.CrawlerDown, true
+		case sim.DirLeft:
+			return sprites.CrawlerLeft, true
+		case sim.DirRight:
+			return sprites.CrawlerRight, true
+		}
+		return sprites.CrawlerUp, true
 	}
 	return 0, false
 }
