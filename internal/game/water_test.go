@@ -57,7 +57,7 @@ func besideTheValve(t *testing.T) *Session {
 
 func TestHoldingSpaceTurnsTheValveOnce(t *testing.T) {
 	s := besideTheValve(t)
-	if got := s.HUD().Prompt; got != "Space: open the sluice gate" && s.promptLeft == 0 {
+	if got := s.HUD().Prompt; got != "Space: open the sluice gate" {
 		t.Fatalf("prompt beside the valve = %q", got)
 	}
 	before := len(s.Commands())
