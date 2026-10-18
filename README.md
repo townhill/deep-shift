@@ -8,22 +8,24 @@ browser, Electron, server or database.
 The game takes design inspiration from the *rules-driven* arcade cave games of the 1980s. All of its code,
 caves, art, names and rules are original to this project.
 
-> **Status: Phases 0–3 delivered in the cloud; Phases 2 and 3 await a Mac playtest.** Movement, digging,
-> crystals, walls and a quota-sealed exit, plus:
+> **Status: Phases 0–4 delivered in the cloud: a five-cave vertical slice that still needs its Mac
+> playtest.** Movement, digging, crystals, walls and a quota-sealed exit, plus:
 >
 > - **gravity:** boulders and crystals fall, roll and crush, and boulders can be pushed;
 > - **water:** it falls and spreads, is conserved exactly, and is too deep to wade when a cell is full;
 > - **sluice gates** that a valve opens and closes.
 >
-> Four caves:
+> The campaign has five caves, plus the "Proving Ground" test cave as an extra:
 >
-> - the "Proving Ground" test cave;
-> - 02 "Unstable Ground";
-> - 03 "The Roll";
-> - 04 "Reservoir".
+> 1. "First Descent" (movement, digging, crystals, the exit);
+> 2. "Unstable Ground" (falling boulders);
+> 3. "The Roll" (rolling and pushing);
+> 4. "Reservoir" (water and a sluice gate);
+> 5. "The Sluice" (water and gravity, two ways through).
 >
-> There's pause/restart, a HUD, and automatic replays of finished attempts. There are no creatures yet. See
-> [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
+> There's a title menu and a cave list, pause/restart, a HUD, sound effects, a performance overlay, and
+> automatic replays of finished attempts. There are no creatures yet, and progress is not saved between
+> runs. See [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
 
 ## What has and has not been verified
 
@@ -32,12 +34,16 @@ caves, art, names and rules are original to this project.
 | Rules: movement, bounds, walls, digging, collecting, exit quota, restart | `go test ./...` (table-driven, headless) | Verified on Linux; CI also runs them on macOS arm64 |
 | Gravity: boulders and crystals fall, roll (left first) and crush; boulders push (no chains); at most one move per tick | `go test ./...`, randomised invariant runs, golden fixtures | Verified on Linux; CI runs them on macOS arm64 |
 | Water: falls then spreads with no left/right bias, conserved every tick, contained by every barrier, displaced by objects; gates and valves | `go test ./...` (hand-computed cases, mirror test, randomised invariants), cave 04 fixture | Verified on Linux; CI runs them on macOS arm64 |
-| Determinism: 100 identical runs → identical hashes at every tick, including a death and a reservoir drain | `internal/replay` test + golden fixtures | Verified (Linux); CI checks the same golden hashes on macOS arm64 |
+| Determinism: 100 identical runs → identical hashes at every tick, including a death, a reservoir drain and a boulder pushed through water | `internal/replay` test + golden fixtures | Verified (Linux); CI checks the same golden hashes on macOS arm64 |
+| Every cave can be completed; cave 05 has two distinct routes; cave 01 cannot hurt the player | Golden replays plus tests on each route's events and water state | Verified (Linux); CI runs them on macOS arm64 |
+| Menus: title, cave list, keys that chose an entry never leak into the game | `internal/game` shell tests; headless capture | Verified (Linux) |
+| Sound: ten original synthesised cues, one per kind of event per tick | `internal/sfx` tests; in a headless capture the app's audio streams matched the synthesised cues sample for sample | Verified as data (Linux VM guest); **not yet heard on a Mac** |
 | A finished attempt is saved as a replay that reproduces it exactly | Session tests; app run headlessly (below) | Verified (Linux) |
 | Cave files validate; broken caves give useful errors | `internal/level` tests, `cavetool validate` | Verified |
 | macOS arm64 / amd64 executables compile | Cross-compile from Linux; native build on CI's macOS runner | Compile-only |
 | `DeepShift.app` bundle builds and is ad-hoc signed | `scripts/build-macos-app.sh` on CI's macOS runner | Packaging checked in CI; **launch from Finder not yet verified** |
-| Window, keyboard, rendering, HUD on a real Mac | Owner ran `go run ./cmd/deepshift` on a Mac: "ok as a first pass" (Phase 1 build) | First pass only; **caves 02–04, boulders and water not yet played on a Mac** |
+| Window, keyboard, rendering, HUD on a real Mac | Owner ran `go run ./cmd/deepshift` on a Mac: "ok as a first pass" (Phase 1 build) | First pass only; **menus, sound, caves 01–05, boulders and water not yet played on a Mac** |
+| 60 FPS on a reference Apple Silicon Mac | The in-game performance overlay (`` ` `` or F3) measures it | **Not yet measured** |
 | Rendering + key handling of the real app on Linux (Xvfb, Mesa software GL) | Ebitengine `exp/vmhost` headless capture, run once by hand | Observed in the cloud session; not macOS, not in CI ([D-014](docs/DECISIONS.md#d-014-ebitengine-expvmhost-headless-capture-assessed-not-adopted)) |
 
 ## Play it on a Mac (from source)
@@ -52,6 +58,8 @@ git clone https://github.com/townhill/deep-shift.git
 cd deep-shift
 go run ./cmd/deepshift            # first run fetches Ebitengine (and Go 1.27.2 if yours is older)
 ```
+
+The game opens on the title menu: choose "Play the campaign" or pick a cave from the list.
 
 `go.mod` pins the toolchain to `go1.27.2`. With any Go ≥ 1.25 installed, the `go` command fetches that exact
 toolchain automatically (`GOTOOLCHAIN=auto`, the default).
@@ -87,19 +95,30 @@ release milestone.
 
 | Key | Action |
 |---|---|
-| Arrow keys / WASD | Move one tile, digging earth and collecting crystals. Holding a key repeats one move per 4 ticks (200 ms). |
-| Space / Enter | Turn the valve next to you, opening or closing its sluice gates. One turn per press. |
-| Esc | Pause / resume. Simulation and input stop while paused. |
+| Arrow keys / WASD | Move one tile, digging earth and collecting crystals. Holding a key repeats one move per 4 ticks (200 ms). In menus: choose. |
+| Space / Enter | Turn the valve next to you, opening or closing its sluice gates. One turn per press. In menus: select. |
+| Esc | Pause / resume. Simulation and input stop while paused. In the cave list: back to the title. |
 | R | Restart the cave, from the pause, completion or death screen. |
 | N | Next cave, from the pause, completion or death screen (wraps after the last). |
+| C | The cave list, from the pause, completion or death screen. |
+| M | Sound on/off |
 | F | Toggle fullscreen |
+| `` ` `` or F3 | Performance overlay on/off (frame rate, update and draw times) |
 | Cmd+Q / close window | Quit |
 
 WASD uses physical key positions, so it stays under the same fingers on non-US layouts.
 
-The caves play in order: `test_cave`, `cave_02`, `cave_03`, then `cave_04`. To start elsewhere, run
-`go run ./cmd/deepshift -cave cave_02`. To play your own cave file, run
+N plays the caves in order: `cave_01` to `cave_05`, then the `test_cave` extra. To skip the menu and start a
+cave directly, run `go run ./cmd/deepshift -cave cave_03`. To play your own cave file, run
 `go run ./cmd/deepshift -cave path/to/cave.json`; validation errors are printed to the terminal.
+
+Other options:
+
+- `-no-audio` starts without opening an audio device, for a machine without sound output;
+- `-perf` starts with the performance overlay on.
+
+Cave 01 is deliberately safe: nothing in it can fall on you. Every other cave can be lost, and R always
+restarts.
 
 **Rules of thumb for gravity:**
 
@@ -118,6 +137,7 @@ The caves play in order: `test_cave`, `cave_02`, `cave_03`, then `cave_04`. To s
 - A gate only closes when nothing (and no water) is in it.
 - Boulders and crystals sink through water, and the water moves up into the space they leave.
 - Earth holds water back until you dig it.
+- A boulder pushed into water shoves the water behind it, so you can follow it through a flooded tunnel.
 
 The full rules are in [docs/PHYSICS.md](docs/PHYSICS.md).
 
@@ -156,9 +176,12 @@ cmd/cavetool/         headless CLI: validate caves, print ASCII state, run/check
 internal/sim/         pure-Go deterministic rules engine: no Ebitengine, GUI, OS, file or clock imports
 internal/level/       versioned cave file format, validation with located errors, checksum
 internal/replay/      tick-stamped replay format, runner, golden comparison
-internal/game/        pure-Go session: tick scheduling, keyboard intent, pause/restart, camera, HUD text
+internal/game/        pure-Go session and menus: tick scheduling, keyboard intent, pause/restart, camera, HUD text
 internal/sprites/     original placeholder tiles drawn in code (pure Go, unit-tested)
-internal/render/      Ebitengine drawing of game frames and HUD
+internal/sfx/         original sound cues synthesised in code, and which events trigger them (pure Go, tested)
+internal/perf/        rolling timing statistics for the performance overlay (pure Go, tested)
+internal/render/      Ebitengine drawing of game frames, menus and HUD
+internal/audio/       Ebitengine playback of the sound cues
 assets/levels/        authored caves (embedded into the binary)
 testdata/replays/     golden replay fixtures with expected hashes and explanations
 packaging/macos/      Info.plist template

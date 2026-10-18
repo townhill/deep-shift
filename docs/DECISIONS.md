@@ -469,3 +469,128 @@ boulder-specific.
   - the player wading in the shallow row;
   - the completion overlay.
 - This is Linux/OpenGL evidence only, not a Mac test.
+
+## D-033: Phase 4 started before the Mac playtests of Phases 2 and 3 (owner decision)
+
+- On 2026-10-18 the owner asked for Phase 4 on a new branch. The Mac checklists for caves 02–04 had not
+  been reported yet.
+- Phase 4 changes no rules: `sim.RuleVersion` stays 3, and every earlier golden replay is untouched. Any
+  tuning the playtests ask for (fall and drain speed, crystal crushes) still needs its own rule version and
+  fixture review.
+- SPEC §11 Phase 4's last acceptance item, known usability, audio and graphics issues documented after a
+  hands-on Mac playtest, cannot be met from the cloud. It stays open in the roadmap.
+
+## D-034: The campaign and the extras
+
+- The campaign is SPEC §8's five starter caves in order, `cave_01` to `cave_05`, with the titles the spec
+  gives. A test pins the ids and titles.
+- The Phase 1 test cave "Proving Ground" moves out of the campaign into an **extras** list. It stays
+  embedded and playable (the cave list, `-cave test_cave`, or N after cave 05) because its golden replays
+  pin the rule-1 behaviour.
+- `assets.PlayOrder` is the campaign followed by the extras; every embedded cave must appear in it exactly
+  once.
+
+## D-035: Cave 01 "First Descent"
+
+- SPEC §8: "movement, dig, crystal, exit; complete cave without death". The cave is 30×14, quota 5 of 6.
+- Nothing in it can hurt the player: there are no boulders and no water, and every crystal rests on wall,
+  so no digging can make one fall. A test checks this.
+- Its golden replay bumps the sealed exit on the way, so the "collect N more" message is part of the
+  recorded tutorial.
+- Phase 4's acceptance asks that every cave can be failed. Cave 01 cannot be, deliberately, as the spec
+  requires; R restarts it at any time.
+
+## D-036: Cave 05 "The Sluice" and its two routes
+
+- SPEC §8 asks for at least two meaningful routes using water and gravity, demonstrated by replays rather
+  than asserted. The cave is 30×16, quota 6 of 9.
+- **One obstacle, two ways past it.** The exit side is reachable only across a seven-cell channel of deep
+  water.
+  - **Sluice route:** turn the valve in the left region's floor. The gate in the middle of the channel's
+    floor opens, and the channel drains into the sump below, leaving a 3-2-1-0-1-2-3 slope that can be
+    waded. The gate sits in the middle because a drain only lowers water within three cells of it
+    (D-027).
+  - **Boulder route:** dig the earth plug under the boulder perched over the channel's mouth, and step
+    aside so it drops in. Then push it along the channel. Each push swaps the deep water ahead of the
+    boulder into the cell behind it, the one the player steps into (D-028), so the player crosses while
+    the channel is still flooded. The valve is never touched.
+- The boulder route is not a new rule. It follows from the documented object-and-water policy, and the
+  README's rules of thumb now mention it.
+- **Probing for unintended routes:** digging out the entire left region beside the channel drains only its
+  near end, because water only flows to a neighbour two units lower. The far five cells stay deep, so a
+  side drain is not a third route. A test pins this.
+- **Evidence:** a golden replay for each route. Tests show:
+  - the sluice route pushes nothing and climbs out with no deep cell left;
+  - the boulder route never turns the valve and climbs out with at least four channel cells still deep;
+  - a flood fill cannot reach the exit side without crossing.
+- Both routes collect the same crystals on the far side. They differ where the spec cares: how the main
+  obstacle is overcome.
+
+## D-037: Menus
+
+- `game.Shell`, pure Go and tested headlessly, sits above the playlist. The app opens on a title menu:
+  play the campaign, or choose a cave.
+  - The cave list shows the campaign and the extras, marking caves completed during this run.
+  - **Progress is not saved between runs.** Saved progress belongs with SPEC §11 Phase 5's "local
+    preferences".
+- From the pause, completion or death screen, C opens the cave list. In the list, Esc goes back to the
+  title. `-cave` still starts a cave directly.
+- **Input guard:** after any screen change, input is ignored until every key has been released. Without
+  it, the Enter that chose a cave could arrive in the game as a fresh press and turn a valve next to the
+  start, or a held arrow could walk.
+- Menu keys reuse the game's controls (arrows/WASD, Space/Enter, Esc), so there is nothing new to learn.
+
+## D-038: Sound
+
+- **Sounds are synthesised in code** (`internal/sfx`) from oscillators, seeded noise and envelopes. There
+  are no audio files to license or ship, and the same cue always gives the same bytes.
+- **Ten cues:** crush, complete, exit open, collect, valve, gate, blocked, land, push and dig. Blocked
+  covers the sealed exit, deep water and a jammed gate. Moving, falling and rolling are silent; they happen
+  too often to be informative.
+- **One sound per kind per tick:** each tick's events map to cues at most once each, in priority order,
+  so ten boulders landing at once make one sound.
+  - Rare, important cues are louder than frequent ones; digging is the quietest.
+  - Every cue starts and ends at silence (no clicks) and peaks below half scale, leaving headroom for
+    overlap.
+- Sound repeats what the screen shows and is never required (SPEC §2).
+- **Playback:** the session queues cues only from simulated ticks, so a paused cave is silent.
+  `internal/audio` plays them through Ebitengine. M toggles sound; `-no-audio` skips the audio device for
+  machines without one, because an audio device error would otherwise end the game loop. A full volume
+  control is a follow-up (SPEC §4 asks for one).
+- **Builds:** Ebitengine's audio backend uses AudioToolbox on macOS and ALSA or PulseAudio on Linux,
+  without cgo, so the build needs no new headers.
+
+## D-039: Measuring performance
+
+- SPEC §11 Phase 4 asks for 60 FPS on a reference Apple Silicon Mac to be measured and reported, not
+  asserted. The cloud cannot measure it.
+- **The overlay:** the backquote key or F3 (or `-perf`) toggles an overlay showing:
+  - Ebitengine's measured FPS and TPS;
+  - CPU time per update, which includes every simulation tick;
+  - CPU time per draw (submitting draw calls, not GPU time).
+
+  Times are averages and p95 over the last four seconds (`internal/perf`). Turning the overlay off prints
+  the same numbers to the terminal, for the playtest report.
+- **Frame rate and simulation:** results cannot depend on frame rate by construction. The simulation runs
+  on a fixed 60 updates per second, independent of the display's refresh rate, and the golden replays pin
+  its outcomes.
+- **Limitation:** under the headless capture driver, FPS and TPS read 0, because the host drives the
+  guest's frames. The overlay's numbers are only meaningful in a real window.
+
+## D-014 addendum: Phase 4 headless capture (2026-10-18)
+
+- The by-hand `exp/vmhost` setup (Linux, Xvfb, Mesa software GL; nothing committed) drove the unmodified app.
+  The driver now takes a small script (`shot`, `wait`, `tap`, `fixture`) and can read the guest's audio
+  streams.
+- **Menus:** injected keys walked from the title through the cave list into cave 05. All three screens
+  rendered.
+- **Boulder route:** `cave_05_boulder_route.json` was replayed with sound on. The guest opened six audio
+  streams at 48 kHz, and each matched a synthesised cue sample for sample: dig, collect, land, push, exit
+  open and complete. That is exactly this route's events (no valve or gate), each at its designed peak.
+  This shows the app produces the intended sound data; it is not the Mac's speakers.
+- **A real fix came from it:** a player standing in deep water behind the pushed boulder was nearly
+  invisible, because water was drawn over the player. Water is now drawn first, and only the player's legs
+  are tinted.
+- **Other runs:**
+  - `-no-audio` runs with no audio streams;
+  - the performance overlay draws legibly (its numbers are meaningless under the driver, D-039).

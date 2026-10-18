@@ -224,6 +224,17 @@ start    tick 0   tick 2
 | ###|   | ###|   | ###|
 ```
 
+**Pushing a boulder through water** (fixture `cave_05_boulder_route.json`): each push moves the boulder
+into deep water and that water into the cell the boulder left, which the player steps into. The water
+behind the player spreads back as a slope. The player follows the boulder along the channel and never needs
+to drain it. Six cells of deep water hold 24 units, and the total stays 24.
+
+```text
+start          after push 1     after push 2
+|@O~~~~~~#|    |1@O~~~~~#|      |23@O~~~~#|   (the player's cell holds water the dump does not show)
+|#########|    |#########|      |#########|
+```
+
 **Draining a reservoir** (`TestClosedGateHoldsWaterUntilTheValveOpensIt`): the closed gate holds two
 deep cells back indefinitely. Interact beside the valve opens it, and the water spreads into the channel
 until no neighbours differ by two units, which takes until tick 7. The open gate holds 2 units that the
