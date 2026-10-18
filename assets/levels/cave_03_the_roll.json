@@ -1,0 +1,30 @@
+{
+  "format_version": 2,
+  "id": "cave_03",
+  "title": "The Roll",
+  "width": 30,
+  "height": 14,
+  "seed": 20261019,
+  "required_crystals": 5,
+  "rows": [
+    "##############################",
+    "#@  ........#................#",
+    "#   ......*.#....*...........#",
+    "#...#O......#................#",
+    "#...#* #....#............*...#",
+    "#....# #....#####............#",
+    "#....# #....O  ..............#",
+    "#....# #....# ##.............#",
+    "#.....#.....# #............*.#",
+    "#.*.........# #... OO*  .....#",
+    "#...........# #...######.....#",
+    "#........*..##...............#",
+    "#...........#..............E.#",
+    "##############################"
+  ],
+  "metadata": {
+    "author": "Deep Shift project (original layout)",
+    "difficulty": "tutorial",
+    "purpose": "Roll and push: dig the plug so a perched boulder rolls into a pit, then push the boulder blocking the only way east into another pit. Two boulders in a row cannot be pushed."
+  }
+}
