@@ -42,8 +42,17 @@ func embeddedCave(t *testing.T, id string) *level.Level {
 // tick and released before the next, so every press is a fresh edge.
 func driveFixture(t *testing.T, s *Session, fixture *replay.Replay) {
 	t.Helper()
+	driveFixtureUntil(t, s, fixture, fixture.Ticks)
+}
+
+// driveFixtureUntil is driveFixture stopping before tick stop.
+func driveFixtureUntil(t *testing.T, s *Session, fixture *replay.Replay, stop uint64) {
+	t.Helper()
 	next := 0
-	for !s.Ended() && s.Snapshot().Tick < fixture.Ticks {
+	for next < len(fixture.Commands) && fixture.Commands[next].Tick < s.Snapshot().Tick {
+		next++ // resume after an earlier call
+	}
+	for !s.Ended() && s.Snapshot().Tick < min(stop, fixture.Ticks) {
 		var c Controls
 		tick := s.Snapshot().Tick
 		if next < len(fixture.Commands) && fixture.Commands[next].Tick == tick {
@@ -56,6 +65,8 @@ func driveFixture(t *testing.T, s *Session, fixture *replay.Replay) {
 				c.Left = true
 			case "right":
 				c.Right = true
+			case replay.ActionInteract:
+				c.Interact = true
 			}
 			next++
 		}

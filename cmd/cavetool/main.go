@@ -70,8 +70,16 @@ func loadFile(name string) (*level.Level, error) {
 }
 
 func describe(w io.Writer, source string, l *level.Level) {
-	fmt.Fprintf(w, "ok %s: id=%s title=%q %dx%d quota=%d/%d seed=%d checksum=%s\n",
-		source, l.ID, l.Title, l.Width, l.Height, l.RequiredCrystals, l.Crystals(), l.Seed, l.Checksum())
+	fmt.Fprintf(w, "ok %s: id=%s title=%q %dx%d quota=%d/%d seed=%d",
+		source, l.ID, l.Title, l.Width, l.Height, l.RequiredCrystals, l.Crystals(), l.Seed)
+	water := 0
+	for _, c := range l.Cave().Cells {
+		water += int(c.Water)
+	}
+	if water > 0 || len(l.Mechanisms) > 0 {
+		fmt.Fprintf(w, " water=%d mechanisms=%d", water, len(l.Mechanisms))
+	}
+	fmt.Fprintf(w, " checksum=%s\n", l.Checksum())
 }
 
 func validate(files []string, stdout io.Writer) error {

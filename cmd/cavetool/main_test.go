@@ -62,3 +62,15 @@ func TestReplayTracePrintsEvents(t *testing.T) {
 		t.Fatalf("exit %d\nstdout head: %.400s\nstderr: %s", code, out, errOut)
 	}
 }
+
+func TestReplayTracePrintsValveAndWater(t *testing.T) {
+	code, out, errOut := runTool("replay", "-trace", "../../testdata/replays/cave_04_complete.json")
+	if code != 0 || !strings.Contains(out, "tick 64: too-deep (13,6)") ||
+		!strings.Contains(out, "tick 205: valve-turned (12,6) gate-opened (13,11) gate-opened (14,11)") {
+		t.Fatalf("exit %d\nstdout head: %.400s\nstderr: %s", code, out, errOut)
+	}
+	code, out, errOut = runTool("validate")
+	if code != 0 || !strings.Contains(out, "id=cave_04") || !strings.Contains(out, "water=44 mechanisms=1") {
+		t.Fatalf("exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
+	}
+}

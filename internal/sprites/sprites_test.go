@@ -18,7 +18,7 @@ func TestSpritesAreDeterministicAndSized(t *testing.T) {
 }
 
 func TestTerrainIsOpaqueAndOverlaysAreCutOut(t *testing.T) {
-	for _, k := range []Kind{Empty, Earth, Wall, ExitSealed, ExitOpen} {
+	for _, k := range []Kind{Empty, Earth, Wall, ExitSealed, ExitOpen, GateClosed, GateOpen, ValveShut, ValveOpen} {
 		img := Generate(k)
 		for i := 3; i < len(img.Pix); i += 4 {
 			if img.Pix[i] != 0xff {
@@ -34,6 +34,20 @@ func TestTerrainIsOpaqueAndOverlaysAreCutOut(t *testing.T) {
 		if img.RGBAAt(Size/2, Size/2).A != 0xff {
 			t.Errorf("%s centre is not opaque", k)
 		}
+	}
+	// Waves go over water, which is itself translucent: never opaque.
+	waves := Generate(Waves)
+	drawn := 0
+	for i := 3; i < len(waves.Pix); i += 4 {
+		if waves.Pix[i] == 0xff {
+			t.Fatal("waves has an opaque pixel")
+		}
+		if waves.Pix[i] > 0 {
+			drawn++
+		}
+	}
+	if drawn < Size*3 {
+		t.Fatalf("waves draws only %d pixels", drawn)
 	}
 }
 
@@ -59,7 +73,7 @@ func TestSpritesDifferInShape(t *testing.T) {
 		}
 		return n
 	}
-	kinds := []Kind{Empty, Earth, Wall, ExitSealed, ExitOpen, Crystal, Player, Boulder}
+	kinds := []Kind{Empty, Earth, Wall, ExitSealed, ExitOpen, Crystal, Player, Boulder, GateClosed, GateOpen, ValveShut, ValveOpen}
 	for i, a := range kinds {
 		for _, b := range kinds[i+1:] {
 			if n := differ(mask(a), mask(b)); n < 40 {

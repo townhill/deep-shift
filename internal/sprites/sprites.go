@@ -5,14 +5,17 @@
 // and the art is reproducible. Objects differ by silhouette as well as
 // colour (SPEC §4 accessibility): blocky masonry for walls, speckled soil
 // for earth, a faceted rhombus for crystals, a helmeted figure for the
-// player, and a barred door versus an open, chevron-marked doorway for the
-// exit states, a round shaded rock for boulders. Pure Go (no Ebitengine),
-// so it is unit-tested headlessly.
+// player, a barred door versus an open, chevron-marked doorway for the exit
+// states, a round shaded rock for boulders, a riveted slab versus a raised
+// one for sluice gates, a wheel whose spokes turn 45 degrees for valves, and
+// wave lines that mark deep water. Pure Go (no Ebitengine), so it is
+// unit-tested headlessly.
 package sprites
 
 import (
 	"image"
 	"image/color"
+	"math"
 )
 
 // Size is the edge length of every tile, in pixels.
@@ -22,7 +25,8 @@ const Size = 32
 type Kind int
 
 // Sprite kinds. Terrain kinds are opaque; Crystal, Player and Boulder are
-// drawn over terrain and have transparent backgrounds.
+// drawn over terrain and have transparent backgrounds; Waves is a
+// translucent pattern drawn over deep water.
 const (
 	Empty Kind = iota
 	Earth
@@ -32,11 +36,17 @@ const (
 	Crystal
 	Player
 	Boulder
+	GateClosed
+	GateOpen
+	ValveShut
+	ValveOpen
+	Waves
 	KindCount
 )
 
 func (k Kind) String() string {
-	return [...]string{"empty", "earth", "wall", "exit-sealed", "exit-open", "crystal", "player", "boulder"}[k]
+	return [...]string{"empty", "earth", "wall", "exit-sealed", "exit-open", "crystal", "player", "boulder",
+		"gate-closed", "gate-open", "valve-shut", "valve-open", "waves"}[k]
 }
 
 // Generate draws sprite k.
@@ -59,6 +69,16 @@ func Generate(k Kind) *image.RGBA {
 		drawPlayer(img)
 	case Boulder:
 		drawBoulder(img)
+	case GateClosed:
+		drawGate(img, false)
+	case GateOpen:
+		drawGate(img, true)
+	case ValveShut:
+		drawValve(img, false)
+	case ValveOpen:
+		drawValve(img, true)
+	case Waves:
+		drawWaves(img)
 	}
 	return img
 }
@@ -293,6 +313,97 @@ func drawBoulder(img *image.RGBA) {
 		img.SetRGBA(p[0], p[1], shade(base, -58+i))
 	}
 	disc(img, 10, 10, 2, shade(base, 60))
+}
+
+var (
+	steelColour = rgb(92, 104, 118)
+	brassColour = rgb(206, 172, 74)
+)
+
+// drawGate draws a sluice gate in a masonry frame: closed, a riveted steel
+// slab fills the opening down to a hazard-striped edge; open, the slab is
+// raised into the top of the frame and the floor shows through.
+func drawGate(img *image.RGBA, open bool) {
+	drawEmpty(img)
+	rect(img, 0, 0, 3, Size-1, stoneColour) // frame posts
+	rect(img, Size-4, 0, Size-1, Size-1, stoneColour)
+	rect(img, 3, 0, 3, Size-1, shade(stoneColour, -24))
+	rect(img, Size-4, 0, Size-4, Size-1, shade(stoneColour, -24))
+	bottom := Size - 1
+	if open {
+		bottom = 7
+	}
+	rect(img, 4, 0, Size-5, bottom, steelColour)
+	for y := 8; y < bottom-4; y += 9 {
+		rect(img, 4, y, Size-5, y, shade(steelColour, -30)) // plate seams
+		img.SetRGBA(7, y+3, shade(steelColour, 60))         // rivets
+		img.SetRGBA(Size-8, y+3, shade(steelColour, 60))
+	}
+	for y := bottom - 3; y <= bottom; y++ {
+		for x := 4; x <= Size-5; x++ {
+			c := rgb(232, 190, 40)
+			if (x+y)/3%2 == 0 {
+				c = rgb(30, 28, 26)
+			}
+			img.SetRGBA(x, y, c) // hazard stripes on the moving edge
+		}
+	}
+	if open {
+		// Downward chevron under the raised slab: the way is clear.
+		for i := range 5 {
+			img.SetRGBA(15-i, 22-i, rgb(220, 230, 240))
+			img.SetRGBA(16+i, 22-i, rgb(220, 230, 240))
+		}
+	}
+}
+
+// drawValve draws a handwheel on the wall. Shut, its spokes form a '+' and
+// the hub is red; open, they form an 'x' and the hub is green.
+func drawValve(img *image.RGBA, open bool) {
+	drawWall(img)
+	const cx, cy = 15.5, 15.5
+	angle := 0.0
+	hub := rgb(200, 50, 40)
+	if open {
+		angle = math.Pi / 4
+		hub = rgb(60, 190, 80)
+	}
+	for y := range Size {
+		for x := range Size {
+			dx, dy := float64(x)-cx, float64(y)-cy
+			d := math.Hypot(dx, dy)
+			switch {
+			case d <= 13.5 && d >= 10.5:
+				img.SetRGBA(x, y, shade(brassColour, int((-dx-dy)*2))) // rim
+			case d < 10.5:
+				img.SetRGBA(x, y, mortarColour) // backplate
+				for k := range 2 {
+					a := angle + float64(k)*math.Pi/2
+					// Distance from the spoke line through the centre at angle a.
+					if math.Abs(dx*math.Sin(a)-dy*math.Cos(a)) < 1.5 {
+						img.SetRGBA(x, y, brassColour)
+					}
+				}
+			}
+		}
+	}
+	disc(img, 15, 15, 3, hub)
+	img.SetRGBA(14, 14, shade(hub, 70))
+}
+
+// drawWaves draws translucent wave lines, the shape cue for deep water.
+func drawWaves(img *image.RGBA) {
+	for _, base := range []int{6, 16, 26} {
+		for x := range Size {
+			off := x % 8
+			if off > 4 {
+				off = 8 - off
+			}
+			y := base + off - 2
+			img.SetRGBA(x, y, color.RGBA{150, 200, 235, 150})
+			img.SetRGBA(x, y+1, color.RGBA{60, 110, 170, 110})
+		}
+	}
 }
 
 func rect(img *image.RGBA, x0, y0, x1, y1 int, c color.RGBA) {
