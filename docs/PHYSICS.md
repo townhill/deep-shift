@@ -1,16 +1,17 @@
-# Deep Shift rules reference — rule version 3
+# Deep Shift rules reference — rule version 4
 
-This file describes the rules **as implemented** in `internal/sim` (`sim.RuleVersion = 3`). The code and its
+This file describes the rules **as implemented** in `internal/sim` (`sim.RuleVersion = 4`). The code and its
 tests are authoritative; keep this file in step with them.
 
 - **Rule version 1** covered movement, digging, crystals and the quota-sealed exit.
 - **Rule version 2** added **gravity** for boulders and crystals (falling, rolling and crushing), and
   pushing for boulders.
-- **Rule version 3** adds **water** (a conserved fluid layer that falls and spreads), **sluice gates**
+- **Rule version 3** added **water** (a conserved fluid layer that falls and spreads), **sluice gates**
   and the **valves** that open and close them, and the player's **Interact** action.
+- **Rule version 4** adds **crawlers**: creatures that follow the wall on their left, catch the player,
+  are crushed by falling objects and drown in water.
 
-Caves without water, gates or valves play exactly as under rule version 2. Creatures are not implemented
-yet.
+Caves without crawlers play exactly as under rule version 3.
 
 ## Grid and coordinates
 
@@ -33,6 +34,7 @@ yet.
 | player | `@` | no | exactly one; starts on empty terrain; may stand in water |
 | crystal | `*` | yes | falls and rolls like a boulder; collected when the player enters its cell, even while it is falling; never pushed |
 | boulder | `O` | yes | always on open floor; can be pushed; needs cave `format_version` 2 |
+| crawler | `↑` `↓` `←` `→` | no | the arrow is the way it faces; never falls or is pushed; needs cave `format_version` 4 ([Crawlers](#crawlers)) |
 
 | Water | Symbol | Notes |
 |---|---|---|
@@ -46,6 +48,8 @@ yet.
   or is collected. Cave files always start objects at rest.
 - Only objects on open floor are subject to gravity. Level files cannot place a boulder inside earth.
 - **Water** may only be in open floor without a boulder or crystal. It shares cells with the player.
+  Water reaching a crawler drowns it by the end of the world step.
+- A crawler's cell also carries its **facing**: the direction it last moved, or starts facing.
 - Anything outside the cave behaves as a wall. "Empty" below means open floor with no occupant; water does
   not matter.
 - Water, gates and valves need cave `format_version` 3. Each valve is linked to its gates by the cave's
@@ -66,7 +70,12 @@ yet.
      1. **Gravity:** boulders and crystals are scanned **bottom row to top row, and left to right
         within a row**. Each object updates at most once per tick: a cell an object moved into this step
         is skipped if the scan reaches it again, and a boulder pushed this tick sits out the step.
-     2. **Water:** falls, then spreads (below).
+     2. **Crawlers**, only on ticks that are multiples of `CrawlerIntervalTicks = 6` (provisional, so
+        crawlers move 3.3 cells/s against the player's 5): scanned **top row to bottom row, left to
+        right within a row**. Each crawler moves at most once per step: a cell a crawler moved into is
+        skipped if the scan reaches it again. A catch ends the crawler step.
+     3. **Water:** falls, then spreads (below).
+     4. **Drowning:** every crawler whose cell now holds water is removed, in row-major order.
   3. **Quota.** If the exit is sealed and `collected ≥ required_crystals`, it opens and emits
      `exit-opened`. This is skipped if the player died this tick.
   4. The tick counter increments.
@@ -79,6 +88,7 @@ yet.
 | outside the cave, a wall, a closed gate or a valve | blocked | — | not started |
 | sealed exit | blocked | `exit-sealed` | not started |
 | deep water (4 units) | blocked | `too-deep` | not started |
+| a crawler | the player is caught and does not move; status `dead` | `player-caught` (crawler → player) | — |
 | empty or open gate, dry or shallow | move (the player wades in any water) | `moved` | started |
 | earth | dig it (earth → empty), move | `moved`, `dug` | started |
 | crystal (resting or falling) | collect it (+1, crystal removed), move | `moved`, `collected` | started |
@@ -107,9 +117,10 @@ or `crystal`). Water never stops an object: cells below and beside are judged ig
 |---|---|---|---|
 | cell below is empty | fall one cell | `fell` (from → to) | yes |
 | player below, object **falling** | the player is crushed; the object stops on them; status `dead` | `player-crushed` (object → player) | no |
+| crawler below, object **falling** | the crawler is crushed and removed; the object falls into its cell | `crawler-crushed`, then `fell` | yes |
 | below is rounded (boulder or crystal), the **left** cell and the cell below it are both empty | roll one cell left | `rolled` | yes |
 | as above but left is blocked, **right** cell and the cell below it both empty | roll one cell right | `rolled` | yes |
-| anything else (earth, wall, exit, closed gate, valve, cave floor, a resting object on the player, blocked rolls) | stay | `landed` if it was falling | no |
+| anything else (earth, wall, exit, closed gate, valve, cave floor, a resting object on the player or a crawler, blocked rolls) | stay | `landed` if it was falling | no |
 
 - **Never teleports:** a fall moves exactly one cell down. A roll moves one cell sideways, and the object
   drops into the diagonal on the *next* gravity step.
@@ -163,6 +174,39 @@ Each world step, after gravity:
 - An open gate is ordinary floor, so water flows through it and objects fall through it: a closed gate
   under a boulder is a **trapdoor** that drops it on the same tick's gravity step.
 - Water rules discover gate changes by themselves; caves contain no scripts.
+
+## Crawlers
+
+A crawler is a creature that keeps the wall on its left. It is not affected by gravity: it clings to
+walls, so it can patrol up and down shafts as easily as along corridors.
+
+- **Open to a crawler:** open floor (empty terrain or an open gate) holding **no water at all** and no
+  occupant except the player. Earth, walls, closed gates, valves, the exit, boulders, crystals, other
+  crawlers, any water and the cave edge all block it.
+- **Left-hand rule:** on its step a crawler tries the cell to its **left**, then **ahead**, then to its
+  **right**, then **behind**, relative to its facing, and takes the first one open to it. Its facing becomes
+  the direction it moved. With all four blocked it stays put and keeps its facing.
+  - Along a wall it follows the wall; in a one-wide corridor it walks to the end and turns back; in open
+    space, with nothing on its left, it turns in a tight square.
+  - Openings on its **right** are only taken when its left and ahead are both blocked. A pocket or tunnel
+    on a crawler's right is a safe place to wait while it passes.
+- **Catching the player:** if the cell a crawler picks holds the player, it catches them: `player-caught`
+  (crawler → player), status `dead`. The crawler stays where it is (it turns to face the player), and no
+  other crawler moves that tick. The rest of the world step still runs, as after a crush.
+  - Walking into a crawler is fatal too (see Player actions): the player does not move.
+  - **Standing next to a crawler is safe.** Only a crawler stepping into the player's cell, or the player
+    stepping into the crawler's, catches.
+- **Crushing:** a **falling** boulder or crystal landing on a crawler crushes it and falls on into its
+  cell (`crawler-crushed`, then `fell`). A resting object over a crawler is held up and harms nothing, so a
+  crawler may walk under a resting boulder; when it walks on, the boulder falls into the cell it left, as
+  it would behind the player.
+- **Drowning:** crawlers never step into water. Water reaching a crawler's cell, by falling or spreading
+  in the water phase, drowns it at the end of that world step (`crawler-drowned`).
+- Crawlers are never pushed or collected, and do not block or displace water: water may flow into a
+  crawler's cell (and drown it).
+- **Gates:** an open gate is floor to a crawler. A crawler standing in a gate jams it, like any occupant.
+- **Validation:** a crawler must face up, down, left or right; it cannot start in water, earth, a wall, a
+  closed gate, a valve or on the exit. Only crawlers have a facing.
 
 ## Examples
 
@@ -248,23 +292,61 @@ start (any number of ticks)     after Interact, settled
 |######|                        |######|
 ```
 
+**Following the wall** (`TestCrawlerFollowsTheWallOnItsLeft`): a crawler facing up in the top-left
+corner of a corridor round a block has a wall to its left and ahead, so it turns right. From then on the
+outer wall is always on its left, and it circles clockwise, one cell per crawler step:
+
+```text
+start          step 1         step 5         step 12
+|#########|    |#########|    |#########|    |#########|
+|#↑    #@#|    |# →   #@#|    |#     #@#|    |#↑    #@#|
+|# ### ###|    |# ### ###|    |# ###↓###|    |# ### ###|
+|#     ###|    |#     ###|    |#     ###|    |#     ###|
+|#########|    |#########|    |#########|    |#########|
+```
+
+**Open space** (`TestCrawlerInOpenSpaceCirclesASquare`): with nothing on its left, a crawler turns left
+every step, so it circles a 2×2 square for ever: from `(3,3)` facing up, it visits `(2,3)`, `(2,4)`,
+`(3,4)`, `(3,3)` and back.
+
+**Caught** (fixture `crawler_warren_caught.json`, columns 7 to 11 of rows 2 and 3): the player waits in
+the hole dug above the ring corridor, which is on the crawler's right and so safe. At tick 120 the
+crawler reaches the corridor's corner; at tick 121 the player steps down into the corridor, in its path.
+At tick 126 the crawler moves next to the player (still safe) and at tick 132 into them.
+
+```text
+tick 121    tick 126    tick 132
+|## ##|     |## ##|     |## ##|
+|  @ ↑|     |  @← |     |  @← |  player-caught: status dead
+```
+
+**The drop** (fixture `crawler_warren_complete.json`, `TestCrawlerWarrenDropCrushesTheCrawlerWhateverTheTiming`):
+a boulder pushed into a one-wide shaft falls three times as fast as the crawler pacing in it moves, and
+the crawler cannot leave the shaft, so the boulder always catches it falling. Pushed at tick 581, it
+crushes the crawler at tick 586 and comes to rest at the bottom.
+
+**The flood** (`TestCrawlerWarrenFloodDrownsTheCrawlerWhateverTheTiming`): nine units of water dropped
+into the middle of a five-cell corridor settle as `12321`. That covers all five cells, so the crawler
+pacing there is drowned wherever it is, and no cell is deep, so the player can wade through afterwards.
+
 ## Determinism contract
 
 - The outcome depends only on **(cave, seed, rule version, per-tick inputs)**.
 - Cells are processed in a documented order (row-major for the player and quota, bottom-to-top /
-  left-to-right for gravity, bottom-to-top for water falls). Water spreads are judged on frozen levels, so
+  left-to-right for gravity, top-to-bottom / left-to-right for crawlers and drowning, bottom-to-top for
+  water falls). Water spreads are judged on frozen levels, so
   their order cannot matter. No Go map iteration, wall-clock time, file I/O or global state affects the
   rules. `internal/sim` imports only `crypto/sha256`, `encoding/binary`, `encoding/hex`, `errors`, `fmt`
   and `strings`; `TestImportsArePure` and a `go list -deps` check in CI enforce this.
-- **Randomness:** SplitMix64 seeded with the cave seed. Its state is hashed. Rule version 3 does not draw
-  from it.
+- **Randomness:** SplitMix64 seeded with the cave seed. Its state is hashed. Rule version 4 does not draw
+  from it: crawlers are fully determined by the cave.
 - **Test-cave example:** in `test_cave` two crystals sit in open pockets, so they drop one cell at tick 0
   (`(9,21)->(9,22)` and `(25,5)->(25,6)`, visible with `cavetool replay -trace`).
-- **State hash** (`sim.StateHash`, layout v3): SHA-256 of a fixed little-endian layout starting with
-  `deep-shift/state-hash/v3\0`. It then covers rule version (u32), seed (u64), tick (u64), width, height,
+- **State hash** (`sim.StateHash`, layout v4): SHA-256 of a fixed little-endian layout starting with
+  `deep-shift/state-hash/v4\0`. It then covers rule version (u32), seed (u64), tick (u64), width, height,
   required, collected, player x and player y (u32 each), exit-open, status and cooldown (u8 each), and the
-  PRNG state (u64). Next come each cell's terrain, occupant, falling flag and water (u8 each), in row-major
-  order. Last are the mechanism links: their count, then for each the valve's x and y, the gate count and
+  PRNG state (u64). Next come each cell's terrain, occupant, falling flag, water and facing (u8 each), in
+  row-major order. Last are the mechanism links: their count, then for each the valve's x and y, the gate count and
   each gate's x and y (u32 each).
 - **Trace hash** (replays): SHA-256 over the tick-0 state hash, then the state hash after each tick that
   advanced the simulation. Frozen ticks after completion or death add nothing.
@@ -273,7 +355,7 @@ start (any number of ticks)     after Interact, settled
 
 | Rule | Tests |
 |---|---|
-| Movement, bounds, walls, digging, collecting, cadence, exit quota | `internal/sim/sim_test.go` (rule-1 tests, unchanged and passing under rule 3) |
+| Movement, bounds, walls, digging, collecting, cadence, exit quota | `internal/sim/sim_test.go` (rule-1 tests, unchanged and passing under rule 4) |
 | Falls one cell per gravity tick, never skipping | `TestBoulderFallsOneCellPerGravityStep`, `TestStackFallsTogetherOneCellEach`, `TestCrystalFallsLikeABoulder` |
 | Crystals roll, crush and can be caught | `TestCrystalRollsOffRoundedObjects`, `TestFallingCrystalCrushesThePlayer`, `TestWalkingIntoAFallingCrystalCollectsIt`, `TestObjectEmbeddedInEarthDoesNotFall` |
 | Supported boulders stay at rest | `TestSupportedBoulderStaysAtRest` (earth, wall, floor, exit, player, flat blockers, blocked diagonals) |
@@ -290,9 +372,14 @@ start (any number of ticks)     after Interact, settled
 | Interact: adjacency order, cooldown, fall-through to a move | `TestInteractTurnsTheFirstAdjacentValveUpDownLeftRight`, `TestInteractDuringCooldownIsIgnored`, `TestInteractWithoutAValveMovesInstead` |
 | Closing needs clear gates; gates block and pass the player | `TestClosingAGateNeedsItClear`, `TestPlayerCannotEnterAClosedGateButWalksThroughAnOpenOne` |
 | Reset restores water, gates and valves | `TestResetRestoresGatesValvesAndWater` |
-| Invariants under random input with water, gates and valves (20 seeds × 3000 ticks) | `TestRandomisedRunsKeepInvariantsAndDeterminism` (water conserved and bounded, never in walls or objects, gates match valves) |
-| 100 identical runs, including a death and a reservoir drain | `TestReplayIsDeterministicAcross100Runs` |
+| Crawlers: left-hand rule, open-space square, boxed in, one move per step, crawler cadence | `TestCrawlerFollowsTheWallOnItsLeft`, `TestCrawlerInOpenSpaceCirclesASquare`, `TestBoxedInCrawlerStays`, `TestCrawlerMovesAtMostOncePerStep` |
+| Crawlers catch the player both ways; a catch ends the crawler step; adjacency is safe | `TestCrawlerCatchesThePlayerByMovingIntoThem`, `TestWalkingIntoACrawlerIsFatal`, `TestCatchStopsTheCrawlerStep` |
+| Falling objects crush crawlers, resting ones do not; water drowns them and they never enter it | `TestFallingObjectCrushesACrawler`, `TestRestingObjectDoesNotCrushACrawler`, `TestCrawlersNeverEnterWaterAndDrownWhenItReachesThem` |
+| Crawlers are blocked by terrain, objects and closed gates, pass open gates; reset; validation; symbols | `TestCrawlersAreBlockedByTerrainAndObjects`, `TestResetRestoresCrawlers`, `TestCrawlerValidation`, `TestCrawlerSymbolsRoundTrip` |
+| Invariants under random input with water, gates, valves and crawlers (20 seeds × 3000 ticks) | `TestRandomisedRunsKeepInvariantsAndDeterminism` (water conserved and bounded, never in walls or objects, gates match valves; crawlers have a facing, stand on dry floor, move one cell, and are only removed by a crush or drowning) |
+| 100 identical runs, including deaths by crush and by crawler, a reservoir drain, and crawlers crushed and drowned | `TestReplayIsDeterministicAcross100Runs` |
 | Death ends the attempt and is logged as a replay | `TestCrushFixtureEndsInDeath`, `TestCrushEndsAttemptAndLogsReproducibleReplay` |
 | Cave 04 needs the sluice and conserves water | `TestCave04TheFloodedShaftIsTheOnlyWayDown`, `TestCave04FixtureDrainsTheShaftBeforeGoingDown` |
+| Crawler Warren: the drop and the flood work whatever the timing; the shaft is the only way down; a catch is logged and reproducible | `TestCrawlerWarrenDropCrushesTheCrawlerWhateverTheTiming`, `TestCrawlerWarrenFloodDrownsTheCrawlerWhateverTheTiming`, `TestCrawlerWarrenTheShaftIsTheOnlyWayDown`, `TestCaughtFixtureEndsInDeath`, `TestCaughtEndsTheAttemptWithItsOwnOverlay` |
 | Every cave is completable | `TestEveryEmbeddedCaveHasACompletionFixture` |
 | Hash layout pinned | `TestStateHashGolden`, golden replay fixtures |

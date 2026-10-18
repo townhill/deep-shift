@@ -154,8 +154,8 @@ Run `go run ./cmd/deepshift` with no flags, or open the CI-built `.app`. Record 
 pause and menu screens, your macOS version and chip, and your display's refresh rate.
 
 - [ ] The title menu appears; arrows choose, Space/Enter select; "Play the campaign" starts cave 01
-- [ ] The cave list shows caves 1–5 and the Proving Ground extra; Esc goes back; a cave you finish shows
-  "(done)"
+- [ ] The cave list shows caves 1–5 and the extras (Crawler Warren and the Proving Ground); Esc goes back;
+  a cave you finish shows "(done)"
 - [ ] Choosing a cave with Enter never moves the player or turns a valve on arrival
 - [ ] In each cave: finish it; lose it where possible (cave 01 has no way to lose); restart with R; reach
   the cave list with C
@@ -169,6 +169,46 @@ pause and menu screens, your macOS version and chip, and your display's refresh 
 - [ ] Press `` ` `` (or F3) and play for a minute in cave 04 or 05. Note FPS, TPS, and update and draw
   avg/p95; toggling off prints them to the terminal. FPS should hold 60 in a window and fullscreen
 - [ ] On a 120 Hz display, movement and falling run at the same speed as at 60 Hz
+
+## Phase 5 — First content and tools iteration: the creature (delivered in the cloud; Mac playtest pending)
+
+SPEC §11 Phase 5 is a menu to prioritise from. The owner chose the creature first
+([D-040](DECISIONS.md#d-040-phase-5-starts-with-the-creature-only-owner-decision)). Rule version 4; the
+decisions are D-040 to D-044.
+
+- [x] A deterministic wall-following creature, the **crawler**: left-hand rule, catches the player, crushed
+  by falling objects, drowned by water ([D-041](DECISIONS.md#d-041-crawlers-rule-version-4)). Movement
+  order, collision and reset have tests, mutation-checked (Cloud)
+- [x] Randomised invariants include crawlers; the earlier nine golden replays are unchanged except their
+  hashes, shown by trace diffs against master (Cloud)
+- [x] Cave format version 4 writes crawlers as arrows
+  ([D-042](DECISIONS.md#d-042-cave-format-version-4)) (Cloud)
+- [x] An example cave, Crawler Warren, an extra showing crawlers with boulders and with water, with a
+  completion replay and a death replay, both in the 100-run determinism check
+  ([D-043](DECISIONS.md#d-043-crawler-warren-the-example-cave)) (Cloud)
+- [x] App: crawler sprite by facing, gliding movement, CAUGHT death screen, two sound cues
+  ([D-044](DECISIONS.md#d-044-presenting-crawlers)); frames and audio checked in a headless capture
+  (Linux/OpenGL only)
+- [x] Level selection UI: done in Phase 4 ([D-037](DECISIONS.md#d-037-menus))
+- [ ] Basic cave editor, structural supports, local preferences, one original visual theme: not started
+- [ ] **Mac:** play Crawler Warren (checklist below)
+
+### Mac playtest checklist for Crawler Warren
+
+Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave crawler_warren`.
+
+- [ ] The opening prompt says crawlers keep the wall on their left
+- [ ] Three violet crawlers glide smoothly one cell at a time, head first; each sprite faces the way it is
+  going
+- [ ] The ring crawler goes round its pillar anticlockwise and never enters the pockets beside it; you can
+  wait in a pocket while it passes
+- [ ] Stepping into a crawler's path gets you caught: CAUGHT, a bite sound, and the left-hand hint. Walking
+  into one says "You walked into a crawler". R restarts
+- [ ] Pushing the boulder into the shaft crushes the crawler there, with a pop and a prompt, whenever you
+  push it
+- [ ] Turning the valve drowns the corridor crawler, with a pop and a prompt; the water settles shallow
+  enough to wade to the exit
+- [ ] Feel: is the crawler speed (one cell per 0.3 s) right? Can you read where a crawler will go next?
 
 ## Follow-ups
 
@@ -192,3 +232,7 @@ pause and menu screens, your macOS version and chip, and your display's refresh 
 | F-16 | Save campaign progress and settings locally | Progress is per run only (D-037); SPEC §11 Phase 5 "local preferences" |
 | F-17 | Volume control beyond mute | SPEC §4 accessibility; M only toggles (D-038) |
 | F-18 | Reduce-motion option for the water easing and glides | SPEC §4 accessibility, with F-8 |
+| F-19 | Tune `CrawlerIntervalTicks` | Provisional (D-041); needs the Crawler Warren Mac playtest |
+| F-20 | Crawlers in campaign caves, and more kinds (a right-hand crawler, a fixed patrol) | Crawler Warren is the only cave with them; SPEC §8's regions call for creatures |
+| F-21 | An audible cue for a nearby crawler | Walking crawlers are silent (D-044), so a threat out of view cannot be heard; needs care not to become noise |
+| F-22 | Remaining Phase 5 items: cave editor, structural supports, local preferences, a visual theme | SPEC §11 Phase 5; not started (D-040) |
