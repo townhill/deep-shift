@@ -1,0 +1,12 @@
+# Build outputs (scripts/build-macos-app.sh, go build)
+/dist/
+/deepshift
+/cavetool
+*.test
+*.out
+
+# Local scratch for the Ebitengine exp/vmhost headless driver (see docs/DECISIONS.md D-014)
+/.vmdriver/
+
+# macOS
+.DS_Store
