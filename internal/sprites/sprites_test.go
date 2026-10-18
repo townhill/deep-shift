@@ -26,7 +26,7 @@ func TestTerrainIsOpaqueAndOverlaysAreCutOut(t *testing.T) {
 			}
 		}
 	}
-	for _, k := range []Kind{Crystal, Player} {
+	for _, k := range []Kind{Crystal, Player, Boulder} {
 		img := Generate(k)
 		if img.RGBAAt(0, 0).A != 0 || img.RGBAAt(Size-1, 0).A != 0 {
 			t.Errorf("%s corners are not transparent", k)
@@ -59,7 +59,7 @@ func TestSpritesDifferInShape(t *testing.T) {
 		}
 		return n
 	}
-	kinds := []Kind{Empty, Earth, Wall, ExitSealed, ExitOpen, Crystal, Player}
+	kinds := []Kind{Empty, Earth, Wall, ExitSealed, ExitOpen, Crystal, Player, Boulder}
 	for i, a := range kinds {
 		for _, b := range kinds[i+1:] {
 			if n := differ(mask(a), mask(b)); n < 40 {

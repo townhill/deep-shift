@@ -6,7 +6,8 @@
 // colour (SPEC §4 accessibility): blocky masonry for walls, speckled soil
 // for earth, a faceted rhombus for crystals, a helmeted figure for the
 // player, and a barred door versus an open, chevron-marked doorway for the
-// exit states. Pure Go (no Ebitengine), so it is unit-tested headlessly.
+// exit states, a round shaded rock for boulders. Pure Go (no Ebitengine),
+// so it is unit-tested headlessly.
 package sprites
 
 import (
@@ -20,8 +21,8 @@ const Size = 32
 // Kind identifies a placeholder sprite.
 type Kind int
 
-// Sprite kinds. Terrain kinds are opaque; Crystal and Player are drawn over
-// terrain and have transparent backgrounds.
+// Sprite kinds. Terrain kinds are opaque; Crystal, Player and Boulder are
+// drawn over terrain and have transparent backgrounds.
 const (
 	Empty Kind = iota
 	Earth
@@ -30,11 +31,12 @@ const (
 	ExitOpen
 	Crystal
 	Player
+	Boulder
 	KindCount
 )
 
 func (k Kind) String() string {
-	return [...]string{"empty", "earth", "wall", "exit-sealed", "exit-open", "crystal", "player"}[k]
+	return [...]string{"empty", "earth", "wall", "exit-sealed", "exit-open", "crystal", "player", "boulder"}[k]
 }
 
 // Generate draws sprite k.
@@ -55,6 +57,8 @@ func Generate(k Kind) *image.RGBA {
 		drawCrystal(img)
 	case Player:
 		drawPlayer(img)
+	case Boulder:
+		drawBoulder(img)
 	}
 	return img
 }
@@ -263,6 +267,32 @@ func drawPlayer(img *image.RGBA) {
 	disc(img, 15, 6, 2, rgb(255, 250, 220))     // lamp
 	img.SetRGBA(13, 12, rgb(30, 30, 30))        // eyes
 	img.SetRGBA(17, 12, rgb(30, 30, 30))
+}
+
+func drawBoulder(img *image.RGBA) {
+	const cx, cy, r = 15.5, 16.0, 13.5
+	base := rgb(132, 116, 100)
+	for y := range Size {
+		for x := range Size {
+			dx, dy := float64(x)-cx, float64(y)-cy
+			d2 := dx*dx + dy*dy
+			if d2 > r*r {
+				continue
+			}
+			// Light from the upper left: shade by the dot product with it.
+			light := (-dx - dy) / (r * 1.41)
+			c := shade(base, int(light*46)+(noise(x/2, y/2, 9)-128)/16)
+			if d2 > (r-1.6)*(r-1.6) {
+				c = rgb(52, 44, 38) // outline
+			}
+			img.SetRGBA(x, y, c)
+		}
+	}
+	// A crack and a highlight make the rock read as stone, not a ball.
+	for i, p := range [][2]int{{18, 9}, {19, 10}, {19, 11}, {20, 12}, {21, 13}, {21, 14}, {20, 15}} {
+		img.SetRGBA(p[0], p[1], shade(base, -58+i))
+	}
+	disc(img, 10, 10, 2, shade(base, 60))
 }
 
 func rect(img *image.RGBA, x0, y0, x1, y1 int, c color.RGBA) {
