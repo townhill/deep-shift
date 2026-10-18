@@ -19,6 +19,11 @@ const (
 	EventLanded                             // falling Object came to rest at Pos
 	EventBoulderPushed                      // the player pushed a boulder; From → Pos
 	EventPlayerCrushed                      // falling Object at From crushed the player at Pos
+	EventTooDeep                            // player bumped deep water at Pos
+	EventValveTurned                        // the player turned the valve at Pos
+	EventGateOpened                         // the gate at Pos opened
+	EventGateClosed                         // the gate at Pos closed
+	EventGateJammed                         // closing failed: the gate at Pos is not clear
 )
 
 func (k EventKind) String() string {
@@ -45,6 +50,16 @@ func (k EventKind) String() string {
 		return "boulder-pushed"
 	case EventPlayerCrushed:
 		return "player-crushed"
+	case EventTooDeep:
+		return "too-deep"
+	case EventValveTurned:
+		return "valve-turned"
+	case EventGateOpened:
+		return "gate-opened"
+	case EventGateClosed:
+		return "gate-closed"
+	case EventGateJammed:
+		return "gate-jammed"
 	}
 	return fmt.Sprintf("event(%d)", uint8(k))
 }

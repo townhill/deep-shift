@@ -1,10 +1,10 @@
 {
   "format_version": 1,
-  "description": "Collects 7 of the 8 required crystals in test_cave (rule version 2: two unsupported crystals drop at tick 0), returns to the exit and pushes into it on three consecutive ticks (749-751). The exit must stay sealed and the cave must still be in play.",
+  "description": "Collects 7 of the 8 required crystals in test_cave (since rule version 2, two unsupported crystals drop at tick 0), returns to the exit and pushes into it on three consecutive ticks (749-751). The exit must stay sealed and the cave must still be in play.",
   "cave_id": "test_cave",
   "cave_checksum": "5bc45eb8ef21eb87326050d187025ace5081140f17784a535e7ddc2863feb120",
   "seed": 20261017,
-  "rule_version": 2,
+  "rule_version": 3,
   "ticks": 819,
   "commands": [
     {"tick":0,"action":"right"},
@@ -204,7 +204,7 @@
     "final_tick": 819,
     "status": "playing",
     "collected": 7,
-    "final_hash": "447b20dc89abc7e2ee79963ea45cdb52055f4b72822daf4990e768205d0ee69e",
-    "trace_hash": "731d40c1c46f7d69760767a996143ec182559fd27435703694125b0d7f3a5101"
+    "final_hash": "2d9f94c8859ba94ece710b7809daecd083a39384c8626f65c70ccbdaeedf47ae",
+    "trace_hash": "dd21024c95e3bb3b43ea6c20a01de93356a8a8fde17743df8b2705a95d0fb7b1"
   }
 }

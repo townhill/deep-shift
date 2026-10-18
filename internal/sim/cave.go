@@ -14,6 +14,16 @@ type Cave struct {
 	// RequiredCrystals is the quota that opens the exit. Zero means the exit
 	// is open from the first tick.
 	RequiredCrystals int
+	// Mechanisms links each valve to the gates it operates. Every valve and
+	// gate cell belongs to exactly one mechanism.
+	Mechanisms []Mechanism
+}
+
+// Mechanism is a valve and the sluice gates it opens and closes together.
+// The gates always share the valve's state: all open or all closed.
+type Mechanism struct {
+	Valve Pos
+	Gates []Pos // in the order their events are reported
 }
 
 // Index returns the row-major index of p. It does not check bounds.
@@ -27,6 +37,11 @@ func (c *Cave) InBounds(p Pos) bool {
 // Clone returns a deep copy of c.
 func (c Cave) Clone() Cave {
 	c.Cells = append([]Cell(nil), c.Cells...)
+	ms := make([]Mechanism, len(c.Mechanisms))
+	for i, m := range c.Mechanisms {
+		ms[i] = Mechanism{Valve: m.Valve, Gates: append([]Pos(nil), m.Gates...)}
+	}
+	c.Mechanisms = ms
 	return c
 }
 
@@ -69,6 +84,12 @@ func (c *Cave) Validate() error {
 		if cell.Falling && !cell.Occupant.Falls() {
 			errs = append(errs, fmt.Errorf("cell %s: only boulders and crystals can be falling", p))
 		}
+		switch {
+		case cell.Water > WaterCapacity:
+			errs = append(errs, fmt.Errorf("cell %s: water %d exceeds the capacity %d", p, cell.Water, WaterCapacity))
+		case cell.Water > 0 && !cell.HoldsWater():
+			errs = append(errs, fmt.Errorf("cell %s: water cannot share a cell with %s on %s terrain", p, cell.Occupant, cell.Terrain))
+		}
 		if cell.Occupant == OccupantNone {
 			continue
 		}
@@ -76,8 +97,8 @@ func (c *Cave) Validate() error {
 			errs = append(errs, fmt.Errorf("cell %s: a boulder cannot be embedded in earth", p))
 		}
 		switch cell.Terrain {
-		case TerrainWall:
-			errs = append(errs, fmt.Errorf("cell %s: %s cannot occupy a wall", p, cell.Occupant))
+		case TerrainWall, TerrainGateClosed, TerrainValveShut, TerrainValveOpen:
+			errs = append(errs, fmt.Errorf("cell %s: %s cannot occupy a %s", p, cell.Occupant, cell.Terrain))
 		case TerrainExit:
 			errs = append(errs, fmt.Errorf("cell %s: %s cannot start on the exit", p, cell.Occupant))
 		}
@@ -100,5 +121,58 @@ func (c *Cave) Validate() error {
 	} else if c.RequiredCrystals > crystals {
 		errs = append(errs, fmt.Errorf("required crystals %d exceeds the %d crystals in the cave", c.RequiredCrystals, crystals))
 	}
+	errs = append(errs, c.validateMechanisms()...)
 	return errors.Join(errs...)
+}
+
+// validateMechanisms checks that every valve and gate belongs to exactly one
+// mechanism, each mechanism has at least one gate, and its gates share its
+// valve's state.
+func (c *Cave) validateMechanisms() []error {
+	var errs []error
+	owner := make([]int, len(c.Cells)) // 1 + mechanism index, 0 for none
+	claim := func(i int, p Pos, want func(Terrain) bool, what string) bool {
+		if !c.InBounds(p) {
+			errs = append(errs, fmt.Errorf("mechanism %d: %s %s is outside the cave", i, what, p))
+			return false
+		}
+		k := c.Index(p)
+		switch {
+		case !want(c.Cells[k].Terrain):
+			errs = append(errs, fmt.Errorf("mechanism %d: %s %s is %s, not a %s", i, what, p, c.Cells[k].Terrain, what))
+		case owner[k] != 0:
+			errs = append(errs, fmt.Errorf("mechanism %d: %s %s already belongs to mechanism %d", i, what, p, owner[k]-1))
+		default:
+			owner[k] = i + 1
+			return true
+		}
+		return false
+	}
+	for i, m := range c.Mechanisms {
+		if !claim(i, m.Valve, Terrain.Valve, "valve") {
+			continue
+		}
+		if len(m.Gates) == 0 {
+			errs = append(errs, fmt.Errorf("mechanism %d: valve %s operates no gates", i, m.Valve))
+		}
+		open := c.Cells[c.Index(m.Valve)].Terrain == TerrainValveOpen
+		for _, g := range m.Gates {
+			if claim(i, g, Terrain.Gate, "gate") && (c.Cells[c.Index(g)].Terrain == TerrainGateOpen) != open {
+				errs = append(errs, fmt.Errorf("mechanism %d: gate %s must be %s like its valve %s", i, g, gateState(open), m.Valve))
+			}
+		}
+	}
+	for k, cell := range c.Cells {
+		if (cell.Terrain.Valve() || cell.Terrain.Gate()) && owner[k] == 0 {
+			errs = append(errs, fmt.Errorf("cell %s: %s belongs to no mechanism", Pos{k % c.Width, k / c.Width}, cell.Terrain))
+		}
+	}
+	return errs
+}
+
+func gateState(open bool) string {
+	if open {
+		return "open"
+	}
+	return "closed"
 }

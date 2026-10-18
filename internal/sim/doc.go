@@ -25,13 +25,16 @@
 // hash after N Steps. Once the cave is complete, Step is a no-op and the tick
 // counter stops advancing. The same holds once the player is dead.
 //
-// # Update order (rule version 2)
+// # Update order (rule version 3)
 //
-//  1. Player phase: movement cooldown, then the move (dig, collect, push,
-//     exit). Entering the open exit ends the tick's updates.
-//  2. Gravity phase, on ticks that are multiples of GravityIntervalTicks:
-//     boulders and crystals on open floor fall, roll, land or crush,
-//     scanned bottom-to-top and left-to-right, each at most once.
+//  1. Player phase: action cooldown, then one action: turn an adjacent
+//     valve (Interact), or move (dig, collect, push, wade, exit). Entering
+//     the open exit ends the tick's updates.
+//  2. World phase, on ticks that are multiples of GravityIntervalTicks.
+//     Gravity first: boulders and crystals on open floor fall, roll, land
+//     or crush, scanned bottom-to-top and left-to-right, each at most once.
+//     Then water falls (bottom-to-top) and spreads sideways, the spread
+//     judged on the levels after the fall and applied all at once.
 //  3. Quota check, which may open the exit (skipped if the player died).
 //  4. Tick counter increments.
 //

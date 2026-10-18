@@ -1,10 +1,10 @@
 {
   "format_version": 1,
-  "description": "Completes test_cave under rule version 2, in which crystals fall: at tick 0 the two unsupported crystals drop one cell, (9,21)-\u003e(9,22) and (25,5)-\u003e(25,6). The route walks to the sealed exit, has an input dropped during the move cooldown, bumps the sealed exit (blocked, window stays open, so the next tick's move succeeds), then collects the 8-crystal quota by nearest-crystal routing re-planned on the simulator after every move, and enters the open exit at tick 845. 40 extra ticks show the completed cave stays frozen.",
+  "description": "Completes test_cave under the rules since version 2, in which crystals fall: at tick 0 the two unsupported crystals drop one cell, (9,21)-\u003e(9,22) and (25,5)-\u003e(25,6). The route walks to the sealed exit, has an input dropped during the move cooldown, bumps the sealed exit (blocked, window stays open, so the next tick's move succeeds), then collects the 8-crystal quota by nearest-crystal routing re-planned on the simulator after every move, and enters the open exit at tick 845. 40 extra ticks show the completed cave stays frozen.",
   "cave_id": "test_cave",
   "cave_checksum": "5bc45eb8ef21eb87326050d187025ace5081140f17784a535e7ddc2863feb120",
   "seed": 20261017,
-  "rule_version": 2,
+  "rule_version": 3,
   "ticks": 889,
   "commands": [
     {"tick":0,"action":"right"},
@@ -226,7 +226,7 @@
     "final_tick": 846,
     "status": "complete",
     "collected": 8,
-    "final_hash": "35269e9a22a6b24775d976626c51b8775f0376af3927c2d6c97c7b37f309d4ce",
-    "trace_hash": "a001e8a1ceeeced01acefe897dc4c8fc5864cb1065032ca62a7d828cb10cea22"
+    "final_hash": "7e537a0ab5038bcb5f634f1556fa7a162f2b2911982ad331b97e9deca5c12aa1",
+    "trace_hash": "e8e72c2b0f3356d547328e42ed8605305611e6ad680a045c365aec95e159431a"
   }
 }
