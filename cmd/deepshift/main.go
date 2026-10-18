@@ -28,7 +28,7 @@ import (
 )
 
 func main() {
-	cave := flag.String("cave", "", "start at this embedded cave id (test_cave, cave_02, cave_03) or play this cave JSON file")
+	cave := flag.String("cave", "", "start at this embedded cave id (cave_01 to cave_05, or test_cave) or play this cave JSON file")
 	replayDir := flag.String("replay-dir", defaultReplayDir(), "directory for replays of finished attempts (empty: do not save)")
 	showVersion := flag.Bool("version", false, "print the build version and exit without opening a window")
 	flag.Parse()

@@ -1,0 +1,30 @@
+{
+  "format_version": 3,
+  "id": "cave_01",
+  "title": "First Descent",
+  "width": 30,
+  "height": 14,
+  "seed": 20261021,
+  "required_crystals": 5,
+  "rows": [
+    "##############################",
+    "#@    ....#........*.........#",
+    "#     ....#........#.........#",
+    "#..*......#..................#",
+    "####......####.....###########",
+    "#..........*.#...............#",
+    "#..........###......*........#",
+    "#...................#........#",
+    "#....######.............*....#",
+    "#....#....#..........#####...#",
+    "#....#..*.#..................#",
+    "#....#..###.............E....#",
+    "#............................#",
+    "##############################"
+  ],
+  "metadata": {
+    "author": "Deep Shift project (original layout)",
+    "difficulty": "tutorial",
+    "purpose": "Movement, digging, crystals and the quota-sealed exit, with nothing that can hurt the player: every crystal rests on solid wall, so none can fall."
+  }
+}
