@@ -146,7 +146,12 @@ func (r *Replay) Validate() error {
 
 // Run simulates r against l, which must be the cave the replay was
 // recorded on.
-func Run(r *Replay, l *level.Level) (*Result, error) {
+func Run(r *Replay, l *level.Level) (*Result, error) { return RunObserved(r, l, nil) }
+
+// RunObserved is Run with an optional observer called after every simulated
+// tick with that tick's number, its events and the simulation. The observer
+// must not mutate the simulation.
+func RunObserved(r *Replay, l *level.Level, observe func(tick uint64, events []sim.Event, s *sim.Sim)) (*Result, error) {
 	if err := r.Validate(); err != nil {
 		return nil, err
 	}
@@ -174,9 +179,12 @@ func Run(r *Replay, l *level.Level) (*Result, error) {
 			in.Move, _ = sim.ParseDir(r.Commands[next].Action)
 			next++
 		}
-		s.Step(in)
+		events := s.Step(in)
 		h = s.StateHash()
 		trace.Write(h[:])
+		if observe != nil {
+			observe(tick, events, s)
+		}
 	}
 
 	res := &Result{

@@ -3,7 +3,7 @@
 //
 //	cavetool validate [FILE...]             validate cave files (default: the embedded caves)
 //	cavetool show FILE                      print a cave's summary and ASCII grid
-//	cavetool replay [-cave FILE] [-print-expect] REPLAY...
+//	cavetool replay [-cave FILE] [-print-expect] [-trace] REPLAY...
 //	                                        run replays, print the final state and
 //	                                        check each replay's expect block
 package main
@@ -28,8 +28,10 @@ func main() {
 const usage = `usage:
   cavetool validate [FILE...]      validate cave files (default: the embedded caves)
   cavetool show FILE               print a cave's summary and ASCII grid
-  cavetool replay [-cave FILE] [-print-expect] REPLAY...
-                                   run replays and check their expect blocks
+  cavetool replay [-cave FILE] [-print-expect] [-trace] REPLAY...
+                                   run replays and check their expect blocks;
+                                   -trace prints events and the grid on every
+                                   tick where something happened
 `
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -114,6 +116,7 @@ func runReplays(args []string, stdout, stderr io.Writer) error {
 	fs.SetOutput(stderr)
 	caveFile := fs.String("cave", "", "cave file to replay against (default: look up cave_id among the embedded caves)")
 	printExpect := fs.Bool("print-expect", false, "print the expect block the run produced, for reviewing a new fixture")
+	trace := fs.Bool("trace", false, "print events and the grid on every tick where something happened")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -136,14 +139,14 @@ func runReplays(args []string, stdout, stderr io.Writer) error {
 
 	var errs []error
 	for _, name := range fs.Args() {
-		if err := runReplay(name, override, embedded, *printExpect, stdout); err != nil {
+		if err := runReplay(name, override, embedded, *printExpect, *trace, stdout); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", name, err))
 		}
 	}
 	return errors.Join(errs...)
 }
 
-func runReplay(name string, override *level.Level, embedded []*level.Level, printExpect bool, stdout io.Writer) error {
+func runReplay(name string, override *level.Level, embedded []*level.Level, printExpect, trace bool, stdout io.Writer) error {
 	data, err := os.ReadFile(name)
 	if err != nil {
 		return err
@@ -159,7 +162,20 @@ func runReplay(name string, override *level.Level, embedded []*level.Level, prin
 			return fmt.Errorf("no embedded cave with id %q (use -cave)", r.CaveID)
 		}
 	}
-	res, err := replay.Run(r, l)
+	var observe func(uint64, []sim.Event, *sim.Sim)
+	if trace {
+		observe = func(tick uint64, events []sim.Event, s *sim.Sim) {
+			if len(events) == 0 {
+				return
+			}
+			fmt.Fprintf(stdout, "tick %d:", tick)
+			for _, e := range events {
+				fmt.Fprintf(stdout, " %s %s", e.Kind, describeEvent(e))
+			}
+			fmt.Fprintf(stdout, "\n%s", s.ASCII())
+		}
+	}
+	res, err := replay.RunObserved(r, l, observe)
 	if err != nil {
 		return err
 	}
@@ -184,4 +200,12 @@ func runReplay(name string, override *level.Level, embedded []*level.Level, prin
 	}
 	fmt.Fprintf(stdout, "%s: matches expect block\n", name)
 	return nil
+}
+
+func describeEvent(e sim.Event) string {
+	switch e.Kind {
+	case sim.EventMoved, sim.EventBoulderFell, sim.EventBoulderRolled, sim.EventBoulderPushed, sim.EventPlayerCrushed:
+		return fmt.Sprintf("%s->%s", e.From, e.Pos)
+	}
+	return e.Pos.String()
 }

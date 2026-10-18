@@ -55,3 +55,10 @@ func TestUnknownCommand(t *testing.T) {
 		t.Fatalf("exit %d, stderr: %s", code, errOut)
 	}
 }
+
+func TestReplayTracePrintsEvents(t *testing.T) {
+	code, out, errOut := runTool("replay", "-trace", "../../testdata/replays/test_cave_sealed_exit.json")
+	if code != 0 || !strings.Contains(out, "tick 12: exit-sealed (5,1)") || !strings.Contains(out, "tick 0: moved (1,1)->(2,1)") {
+		t.Fatalf("exit %d\nstdout head: %.400s\nstderr: %s", code, out, errOut)
+	}
+}
