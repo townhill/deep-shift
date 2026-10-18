@@ -74,3 +74,15 @@ func TestReplayTracePrintsValveAndWater(t *testing.T) {
 		t.Fatalf("exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
 }
+
+func TestReplayTracePrintsCrawlers(t *testing.T) {
+	code, out, errOut := runTool("replay", "-trace", "../../testdata/replays/crawler_warren_caught.json")
+	if code != 0 || !strings.Contains(out, "tick 126: crawler-moved (10,3)") ||
+		!strings.Contains(out, "tick 132: player-caught (9,3)") || !strings.Contains(out, "status=dead") {
+		t.Fatalf("exit %d\nstdout tail: %s\nstderr: %s", code, out[max(0, len(out)-600):], errOut)
+	}
+	code, out, errOut = runTool("validate")
+	if code != 0 || !strings.Contains(out, "id=crawler_warren") || !strings.Contains(out, "water=9 mechanisms=1 crawlers=3") {
+		t.Fatalf("exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
+	}
+}
