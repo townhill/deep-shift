@@ -8,20 +8,28 @@ Electron, server or database.
 The game takes design inspiration from the *rules-driven* arcade cave games of the 1980s. All of its code,
 caves, art, names and rules are original to this project.
 
-> **Status: Phase 0 + the first slice of Phase 1.** One test cave ("Proving Ground") has movement, digging,
-> crystals, walls, a quota-sealed exit, pause/restart and a HUD. There are no boulders, water or creatures yet.
-> See [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status: Phases 0–2 delivered; Phase 2 awaits a Mac playtest.** Movement, digging, crystals, walls and a
+> quota-sealed exit, plus **boulders** that fall, roll, can be pushed and crush. Three caves:
+>
+> - the "Proving Ground" test cave;
+> - 02 "Unstable Ground";
+> - 03 "The Roll".
+>
+> There's pause/restart, a HUD, and automatic replays of finished attempts. There's no water, gates or
+> creatures yet. See [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
 
 ## What has and has not been verified
 
 | Behaviour | How it was checked | Status |
 |---|---|---|
 | Rules: movement, bounds, walls, digging, collecting, exit quota, restart | `go test ./...` (table-driven, headless) | Verified on Linux; CI also runs them on macOS arm64 |
-| Determinism: 100 identical runs → identical hashes at every tick | `internal/replay` test + golden fixtures | Verified (Linux); CI checks the same golden hashes on macOS arm64 |
+| Boulders: fall, roll (left first), push (no chains), crush, at most one move per tick | `go test ./...`, randomised invariant runs, golden fixtures | Verified on Linux; CI runs them on macOS arm64 |
+| Determinism: 100 identical runs → identical hashes at every tick, including a death | `internal/replay` test + golden fixtures | Verified (Linux); CI checks the same golden hashes on macOS arm64 |
+| A finished attempt is saved as a replay that reproduces it exactly | Session tests; app run headlessly (below) | Verified (Linux) |
 | Cave files validate; broken caves give useful errors | `internal/level` tests, `cavetool validate` | Verified |
 | macOS arm64 / amd64 executables compile | Cross-compile from Linux; native build on CI's macOS runner | Compile-only |
 | `DeepShift.app` bundle builds and is ad-hoc signed | `scripts/build-macos-app.sh` on CI's macOS runner | Packaging checked in CI; **launch from Finder not yet verified** |
-| Window, keyboard, rendering, HUD on a real Mac | — | **Not yet tested: pending a hands-on Mac playtest** |
+| Window, keyboard, rendering, HUD on a real Mac | Owner ran `go run ./cmd/deepshift` on a Mac: "ok as a first pass" (Phase 1 build) | First pass only; **caves 02/03 and boulders not yet played on a Mac** |
 | Rendering + key handling of the real app on Linux (Xvfb, Mesa software GL) | Ebitengine `exp/vmhost` headless capture, run once by hand | Observed in the cloud session; not macOS, not in CI ([D-014](docs/DECISIONS.md#d-014-ebitengine-expvmhost-headless-capture-assessed-not-adopted)) |
 
 ## Play it on a Mac (from source)
@@ -73,15 +81,31 @@ release milestone.
 |---|---|
 | Arrow keys / WASD | Move one tile, digging earth and collecting crystals. Holding a key repeats one move per 4 ticks (200 ms). |
 | Esc | Pause / resume. Simulation and input stop while paused. |
-| R | Restart the cave, from the pause screen or the completion screen. |
+| R | Restart the cave, from the pause, completion or death screen. |
+| N | Next cave, from the pause, completion or death screen (wraps after the last). |
 | F | Toggle fullscreen |
 | Cmd+Q / close window | Quit |
 
 WASD uses physical key positions, so it stays under the same fingers on non-US layouts. Space/Enter are
 reserved for mechanisms (valves, gates) in later phases.
 
-To play a different cave file: `go run ./cmd/deepshift -cave path/to/cave.json`. Validation errors are
-printed to the terminal.
+The caves play in order: `test_cave`, then `cave_02`, then `cave_03`. To start elsewhere, run
+`go run ./cmd/deepshift -cave cave_02`. To play your own cave file, run
+`go run ./cmd/deepshift -cave path/to/cave.json`; validation errors are printed to the terminal.
+
+**Rules of thumb for boulders:**
+
+- A boulder resting above you won't hurt you, but one that is falling will.
+- When you dig out from under a boulder, step **sideways**, never straight down.
+- You can push one boulder left or right into open floor.
+- Boulders roll off other boulders and crystals.
+
+The full rules are in [docs/PHYSICS.md](docs/PHYSICS.md).
+
+**Replays:** every finished attempt, completed or crushed, is saved to
+`~/Library/Application Support/Deep Shift/replays/`. The HUD shows the file name. Run
+`go run ./cmd/cavetool replay <file>` to re-run one exactly. `-replay-dir <dir>` changes the folder, and
+`-replay-dir ""` turns saving off.
 
 ## Develop and test (any OS, no display needed)
 
@@ -91,6 +115,7 @@ go vet ./...
 go run ./cmd/cavetool validate    # validate the embedded caves
 go run ./cmd/cavetool show assets/levels/test_cave.json
 go run ./cmd/cavetool replay testdata/replays/*.json   # re-run golden replays and check their hashes
+go run ./cmd/cavetool replay -trace testdata/replays/cave_02_crushed.json   # events + grid per tick
 go test -run '^$' -bench . ./internal/sim              # tick/hash benchmarks on a 60x40 cave
 ```
 
@@ -132,5 +157,13 @@ docs/                 SPEC, ROADMAP, DECISIONS, PHYSICS
 
 ## Reporting a playtest bug
 
-Include: build (the pause screen shows `build <revision>`), macOS version and chip, cave id, seed (from the
-cave file), steps, expected, actual, screenshot/video if visual, and whether it reproduces.
+Include:
+
+- the build (the pause screen shows `build <revision>`);
+- your macOS version and chip;
+- the cave id and seed (from the cave file);
+- steps, expected and actual;
+- a screenshot or video if it's visual;
+- whether it reproduces.
+
+**Attach the replay file** the game saved for that attempt (see Replays above), so it can be re-run exactly.

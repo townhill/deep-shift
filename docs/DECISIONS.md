@@ -100,6 +100,8 @@ playtesting. Newest entries go at the bottom.
   matching trace hashes mean the runs agreed at *every* tick.
 - **Rule:** any change that alters a golden hash needs a deliberate `RuleVersion` or hash-magic bump, a
   PHYSICS.md update and a fixture review. Hashes are never regenerated wholesale.
+- **Amended by [D-020](#d-020-rule-version-2-hash-layout-v2-and-the-reviewed-fixture-changes):** the hash
+  layout is now v2, and the trace hash stops at the final tick.
 
 ## D-010: Replay format version 1
 
@@ -199,3 +201,110 @@ The spec asked for Ebitengine 2.10's agent-oriented virtualisation to be assesse
   procedurally in `internal/sprites`. Tile symbols, terminology ("crystals", "sealed exit", "quota") and
   rules were chosen independently. No external art, audio, fonts (beyond Ebitengine's built-in debug
   font) or level data are included.
+
+## D-018: Boulder rules (rule version 2, provisional tuning)
+
+- **Gravity cadence:** gravity runs on ticks that are multiples of `GravityIntervalTicks = 2`, so boulders
+  move 10 cells/s, twice the player's walking speed. That makes falls dangerous but readable. Tune after
+  playtesting.
+- **Scan order:** rows bottom to top, and left to right within a row. A supported stack therefore drops
+  together when its support goes. A per-step *updated* marker on destination cells stops a boulder that
+  rolled right from being processed again. A boulder pushed this tick sits out that tick's gravity step.
+  Together these guarantee each boulder moves at most one cell per tick (SPEC §6.2).
+- **Moving vs resting:** a per-cell `Falling` flag records that the boulder moved on the last gravity step.
+  Only a falling boulder crushes the player. A resting one is held up by the player, which makes "dig
+  under it, then step aside" a safe, learnable move and "run straight down" fatal.
+- **Crush:** the boulder stops on the player, `player-crushed` is emitted and the status becomes `dead`.
+  The simulation then freezes like completion. The boulder does not take the player's cell, so the
+  one-player invariant still holds.
+- **Rolling:** off rounded occupants only (boulders, crystals); earth, walls, the exit and the player are
+  flat. A roll needs both the side cell and the cell below it empty, and tries **left before right**. It
+  moves one cell sideways; the drop into the diagonal happens on the next gravity step, so no move ever
+  covers two cells.
+- **Pushing:** horizontal only, resting boulders only, into empty floor only, one boulder only (no
+  chains). It always succeeds when allowed, with no random resistance: the PRNG stays unused, and pushing
+  should feel deterministic.
+- **Order within a tick:** entering the open exit ends the tick immediately, so nothing can fall on a player
+  who has just finished. The quota check is skipped on the tick the player dies.
+
+## D-019: Crystals do not fall in rule version 2 (provisional)
+
+- **Decision:** crystals are rounded (boulders roll off them) but are not affected by gravity.
+- **Why:** SPEC §6.2 says gravity applies to crystals only "when sensible". Keeping them fixed means crystals
+  remain stable goals rather than a second hazard class. It also keeps every boulder-free cave, including
+  the Phase 1 test cave, behaving exactly as under rule version 1.
+- **Revisit:** after the Mac playtest of caves 02/03. Falling crystals would be a rule-version bump of its
+  own.
+
+## D-020: Rule version 2, hash layout v2 and the reviewed fixture changes
+
+- `sim.RuleVersion` is now 2, and the state-hash magic is `deep-shift/state-hash/v2` (one extra byte per
+  cell for the falling flag). `TestStateHashGolden` was re-pinned for that.
+- **Test-cave fixtures:** both had to be re-recorded, because the rule version is part of every hash and
+  of the replay header. Before accepting new hashes, I ran both fixtures under the rule-1 build (from git)
+  and under rule 2. Final tick, status, crystal count and the final ASCII grid are identical. Each file's
+  diff is only `rule_version` and the two hashes.
+- **Trace hash semantics:** the trace now covers ticks 0 to the final tick only. Ticks after completion or
+  death leave the state frozen and are no longer hashed. Before this change, a fixture that idled after the
+  end and the app's own recording of the same attempt had different traces even though every real tick
+  matched. Only the `trace_hash` of the four fixtures with idle tails changed; their final hashes did not.
+
+## D-021: Cave format version 2
+
+- **Decision:** `format_version` 2 adds the boulder symbol `O`. The reader accepts versions 1 and 2. A
+  version-1 file containing `O` is rejected with a specific message ("boulder(s) 'O' at x=… need
+  format_version 2 or later"), not "unknown symbol".
+- **Why:** files declare what they need, and older caves stay valid byte for byte. The test cave is still
+  version 1, so its checksum is unchanged. New caves use version 2.
+
+## D-022: Death and the end of an attempt
+
+- A crush ends the attempt like completion: the world freezes and Esc does nothing. **R** restarts and
+  **N** moves to the next cave, from the pause, completion and death screens (D-011 extended). The crushed
+  player is drawn squashed and tinted red under a "CRUSHED" overlay.
+
+## D-023: Replays of finished attempts are saved automatically
+
+- **Decision:** when an attempt ends (completed or crushed), the app writes it as a replay to
+  `<user config dir>/Deep Shift/replays/<cave>-<status>-<YYYYMMDD-HHMMSS>.json`. On macOS that is
+  `~/Library/Application Support/Deep Shift/replays/`. Existing files are never overwritten. The HUD names
+  the file, and the terminal logs the full path. `-replay-dir` changes the folder; `-replay-dir ""`
+  disables saving.
+- **Self-verifying:** the session keeps a live trace hash, so each saved replay carries an expect block,
+  and `cavetool replay <file>` confirms it reproduces exactly. This meets SPEC §11 Phase 2 ("logs a
+  reproducible replay") and gives bug reports a replay to attach. A manual "export now" key remains a
+  follow-up.
+- **Not in the simulation:** file I/O and wall-clock timestamps live only in `cmd/deepshift` and
+  `replay.Save`.
+
+## D-024: Cave order and selection
+
+- `assets.PlayOrder` lists every embedded cave (`test_cave`, `cave_02`, `cave_03`). `game.OrderLevels` fails
+  if a cave is missing from it, so a new cave cannot be silently left out. The app starts at the first
+  cave. `-cave` takes an embedded id (start there) or a file path (play that file alone). A menu or world
+  map is Phase 4 scope.
+
+## D-025: Example caves 02 and 03
+
+- **cave_02 "Unstable Ground"** (SPEC §8: "dig safely or be crushed"), 30×14, quota 6 of 8. Its lessons:
+  - take a crystal from under a boulder and step aside;
+  - tunnel under a row of boulders that collapses behind you;
+  - a mid-air boulder that falls the moment the cave starts;
+  - empty a walled shaft from its side entrance.
+- **cave_03 "The Roll"** (SPEC §8: "a deliberate path cleared by moving one boulder"), 30×14, quota 5 of 8.
+  Its lessons:
+  - dig the earth plug beside a perched boulder and step back, so it rolls into a pit and frees its
+    crystal;
+  - push the boulder in the only gap of a full-height wall into the pit beyond it. Only 4 crystals lie
+    west of that wall, so the push is required;
+  - two boulders in a row cannot be pushed, so their crystal must be reached another way.
+- Both layouts are original. Each has a golden completion replay, and cave_02 also has a death replay.
+
+## D-014 addendum: Phase 2 headless capture (2026-10-18)
+
+- The same by-hand `exp/vmhost` setup (Linux, Xvfb, Mesa software GL; nothing committed) replayed
+  `cave_02_crushed.json` and `cave_03_complete.json` through injected key events into the unmodified app.
+  The frames showed boulders mid-fall, the crushed player, the CRUSHED overlay with the "Replay saved"
+  prompt, and the push into the pit.
+- The replay files the app wrote matched the golden fixtures' final and trace hashes exactly. This is
+  still Linux/OpenGL evidence, not a Mac test.

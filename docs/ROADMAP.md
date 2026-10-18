@@ -12,7 +12,9 @@ verified by automated tests or tools in a cloud/CI environment. **Mac** = needs 
 - [x] CI: Linux test/vet/validate/cross-compile job; macOS arm64 test/build/package job
 - [x] Mac build script `scripts/build-macos-app.sh` producing an ad-hoc-signed development `.app`
 - [x] README with exact local Mac build/run steps; SPEC, DECISIONS, PHYSICS, ROADMAP
-- [ ] **Mac:** a human follows the README on a physical Mac and the window opens
+- [x] **Mac:** a human follows the README on a physical Mac and the window opens. The owner ran
+  `go run ./cmd/deepshift` and judged it "ok as a first pass" (2026-10-18); the detailed checklist below
+  has not been reported yet.
 
 ## Phase 1 — Deterministic core (first slice delivered)
 
@@ -24,7 +26,8 @@ verified by automated tests or tools in a cloud/CI environment. **Mac** = needs 
 - [x] Tick-stamped replays with golden fixtures; 100-run determinism test with per-tick trace hashes
 - [x] Pause/resume, restart from pause/completion, HUD (cave, quota, exit state, time, prompts)
 - [x] Original placeholder art drawn in code; one original test cave ("Proving Ground")
-- [ ] **Mac:** playtest of the test cave (checklist below)
+- [ ] **Mac:** full playtest of the test cave (checklist below). A first pass was done by the owner on
+  2026-10-18.
 
 ### Mac playtest checklist for the test cave
 
@@ -45,31 +48,62 @@ bug-report template.
 - [ ] Window resize keeps the aspect ratio; Retina sharpness is acceptable for placeholder art
 - [ ] Movement feel: is 200 ms per tile too slow or too fast? (`MoveIntervalTicks`, `SlideUpdates`)
 
-## Phase 2 — Boulder physics (next)
+## Phase 2 — Boulder physics (delivered in the cloud; Mac playtest pending)
 
-Acceptance contract: SPEC §11 Phase 2. Falling (one cell per tick, never skipping), rolling with
-documented tie-breaking, single horizontal push without chains, crush/death with events, the
-`updatedAtTick` guarantee, two example caves, and replay fixtures that include a death. Start only after the
-Phase 1 Mac playtest is done.
+Acceptance contract: SPEC §11 Phase 2. Rules are in [PHYSICS.md](PHYSICS.md) (rule version 2), and the
+decisions are D-018 to D-025.
+
+- [x] Unsupported boulder falls one cell per gravity tick, never skipping (Cloud)
+- [x] Supported boulder stays at rest; rolls only off rounded blockers with both side cells clear, left
+  before right (Cloud)
+- [x] Each boulder updates at most once per tick, including after a roll or a push. This is mutation-
+  checked, and the randomised runs check it on every tick (Cloud)
+- [x] Horizontal push of one resting boulder into empty floor; no chains, no vertical pushes (Cloud)
+- [x] A falling boulder crushes the player: the status becomes `dead`, the cave freezes, and R/N are
+  offered. The attempt is logged as a replay that reproduces the death (Cloud)
+- [x] Death, reset and replay are deterministic, with 100 identical runs of the death fixture (Cloud)
+- [x] Events for fall, roll, land, push and crush; boulder sprite and gliding animation
+- [x] Two example caves with golden replays: `cave_02` Unstable Ground and `cave_03` The Roll
+- [ ] **Mac:** playtest of caves 02 and 03 (checklist below)
+
+### Mac playtest checklist for caves 02 and 03
+
+Start with `go run ./cmd/deepshift -cave cave_02`, or press N on a pause or end screen to move on.
+
+- [ ] Boulders look round and distinct from crystals; falling boulders move smoothly (no jumps)
+- [ ] cave_02: taking the first crystal from the side, then stepping aside, lets the boulder drop behind
+  you; moving straight down from under it crushes you
+- [ ] Death shows CRUSHED with "R: try again   N: next cave" and a "Replay saved: …" prompt; the file
+  exists under `~/Library/Application Support/Deep Shift/replays/`, and
+  `go run ./cmd/cavetool replay <file>` reports "matches expect block"
+- [ ] cave_02: the row of boulders collapses behind you as you tunnel under it; the shaft stack drops when
+  you step back out of its side entrance
+- [ ] cave_03: digging the plug and stepping back makes the perched boulder roll into the pit
+- [ ] cave_03: pushing the boulder in the wall gap drops it into the pit, and the way east opens
+- [ ] cave_03: two boulders in a row will not move
+- [ ] Feel: is boulder speed (10 cells/s) fair? Should crystals fall too (D-019)?
 
 ## Phase 3 — Water and sluice gate
 
-Not started. Begin only after Phase 2's physics tests and Mac playtesting are stable.
+Not started. Begin only after Phase 2's physics tests and the caves 02/03 Mac playtest are stable.
 
 ## Phase 4 — Playable native Mac vertical slice
 
 Not started.
 
-## Follow-ups recorded in this PR
+## Follow-ups
 
 | ID | Follow-up | Why |
 |---|---|---|
-| F-1 | Hands-on Mac playtest of Phase 0/1 (checklist above) | The GUI has not been observed on macOS |
+| F-1 | Full hands-on Mac playtest (checklists above) | A first pass was done; the detailed checks and Phase 2 caves are not yet confirmed on macOS |
 | F-2 | Developer ID signing and notarisation in CI | Remove the Gatekeeper "Open Anyway" step; needs Apple credentials as secrets |
 | F-3 | App icon (`.icns`) generated from original art | The bundle currently has no icon |
 | F-4 | Retina-crisp rendering (`LayoutF`/device scale) and a real UI font | Placeholder text uses the 2× debug font |
-| F-5 | In-app replay export (for example on completion or via a key) | Bug reports should carry a replay; `Session.Replay` already builds one |
+| F-5 | Manual "export replay now" key | Replays of finished attempts are now saved automatically (D-023); mid-attempt export is still missing |
 | F-6 | `tools/vmcapture` plus an optional CI job using Ebitengine `exp/vmhost` | Repeatable headless frame captures ([D-014](DECISIONS.md#d-014-ebitengine-expvmhost-headless-capture-assessed-not-adopted)) |
 | F-7 | Intel / universal (`lipo`) build and test | macOS amd64 is "desired"; currently compile-only |
 | F-8 | Rebindable keys, reduced-effects mode, UI scaling | SPEC §4 accessibility; designed for but not built |
 | F-9 | Record simulation tick timing (avg/p95) on a reference Mac | SPEC §12 performance gate; CI records a Linux benchmark only |
+| F-10 | Tune `GravityIntervalTicks` and decide whether crystals fall | Provisional values from D-018 and D-019; needs Mac playtest feedback |
+| F-11 | Sound cues for land, push and crush events | SPEC §2 and Phase 4; the events already exist |
+| F-12 | Move `actions/upload-artifact` to a Node 24 release | CI warns that the v4 action targets Node 20 |
