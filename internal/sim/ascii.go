@@ -5,23 +5,36 @@ import "strings"
 // Tile symbols. One legend serves authored level rows (internal/level) and
 // ASCII state dumps, so a dump of a fresh cave reads back as the same layout.
 const (
-	SymbolEmpty    = ' '
-	SymbolEarth    = '.'
-	SymbolWall     = '#'
-	SymbolCrystal  = '*'
-	SymbolPlayer   = '@'
-	SymbolBoulder  = 'O' // boulder; level files need format_version 2 or later
-	SymbolExit     = 'E' // exit, sealed (and the only exit symbol in files)
-	SymbolExitOpen = 'X' // exit, open; dumps only, not accepted in files
+	SymbolEmpty      = ' '
+	SymbolEarth      = '.'
+	SymbolWall       = '#'
+	SymbolCrystal    = '*'
+	SymbolPlayer     = '@'
+	SymbolBoulder    = 'O' // boulder; level files need format_version 2 or later
+	SymbolExit       = 'E' // exit, sealed (and the only exit symbol in files)
+	SymbolExitOpen   = 'X' // exit, open; dumps only, not accepted in files
+	SymbolDeepWater  = '~' // empty floor full of water (WaterCapacity units)
+	SymbolGateClosed = 'G'
+	SymbolGateOpen   = 'g'
+	SymbolValveShut  = 'V'
+	SymbolValveOpen  = 'v'
 )
+
+// Shallow water on empty floor is written as its amount, '1' to '3'
+// (WaterCapacity-1). Water, gates and valves need format_version 3 or later.
 
 // SymbolLegend describes the symbols accepted in level rows, for error
 // messages and documentation.
-const SymbolLegend = `'#' wall, '.' earth, ' ' empty, '*' crystal, '@' player start, 'E' exit, 'O' boulder`
+const SymbolLegend = `'#' wall, '.' earth, ' ' empty, '*' crystal, '@' player start, 'E' exit, 'O' boulder, ` +
+	`'~' deep water, '1'-'3' shallow water, 'G'/'g' closed/open gate, 'V'/'v' shut/open valve`
 
 // CellForSymbol maps a level-file symbol to its initial cell. Crystals,
-// boulders and the player start on empty terrain; boulders start at rest.
+// boulders, water and the player start on empty terrain; boulders start at
+// rest.
 func CellForSymbol(r rune) (Cell, bool) {
+	if r >= '1' && r < '0'+WaterCapacity {
+		return Cell{Terrain: TerrainEmpty, Water: uint8(r - '0')}, true
+	}
 	switch r {
 	case SymbolEmpty:
 		return Cell{Terrain: TerrainEmpty}, true
@@ -37,12 +50,23 @@ func CellForSymbol(r rune) (Cell, bool) {
 		return Cell{Terrain: TerrainExit}, true
 	case SymbolBoulder:
 		return Cell{Terrain: TerrainEmpty, Occupant: OccupantBoulder}, true
+	case SymbolDeepWater:
+		return Cell{Terrain: TerrainEmpty, Water: WaterCapacity}, true
+	case SymbolGateClosed:
+		return Cell{Terrain: TerrainGateClosed}, true
+	case SymbolGateOpen:
+		return Cell{Terrain: TerrainGateOpen}, true
+	case SymbolValveShut:
+		return Cell{Terrain: TerrainValveShut}, true
+	case SymbolValveOpen:
+		return Cell{Terrain: TerrainValveOpen}, true
 	}
 	return Cell{}, false
 }
 
 // Symbol returns the dump symbol for c. Occupants take precedence over
-// terrain.
+// water, and water over empty terrain. Water in an open gate or in the
+// player's cell is not shown.
 func Symbol(c Cell, exitOpen bool) rune {
 	switch c.Occupant {
 	case OccupantPlayer:
@@ -54,6 +78,12 @@ func Symbol(c Cell, exitOpen bool) rune {
 	}
 	switch c.Terrain {
 	case TerrainEmpty:
+		switch {
+		case c.Deep():
+			return SymbolDeepWater
+		case c.Water > 0:
+			return rune('0' + c.Water)
+		}
 		return SymbolEmpty
 	case TerrainEarth:
 		return SymbolEarth
@@ -64,6 +94,14 @@ func Symbol(c Cell, exitOpen bool) rune {
 			return SymbolExitOpen
 		}
 		return SymbolExit
+	case TerrainGateClosed:
+		return SymbolGateClosed
+	case TerrainGateOpen:
+		return SymbolGateOpen
+	case TerrainValveShut:
+		return SymbolValveShut
+	case TerrainValveOpen:
+		return SymbolValveOpen
 	}
 	return '?'
 }

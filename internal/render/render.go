@@ -34,9 +34,11 @@ const (
 )
 
 var (
-	backgroundColour = color.RGBA{10, 9, 14, 0xff}
-	hudColour        = color.RGBA{16, 18, 26, 0xff}
-	hudRuleColour    = color.RGBA{60, 200, 210, 0xff}
+	backgroundColour   = color.RGBA{10, 9, 14, 0xff}
+	hudColour          = color.RGBA{16, 18, 26, 0xff}
+	hudRuleColour      = color.RGBA{60, 200, 210, 0xff}
+	waterColour        = color.NRGBA{40, 110, 200, 150}
+	waterSurfaceColour = color.NRGBA{170, 215, 245, 200}
 )
 
 // Renderer owns the GPU images used to draw frames.
@@ -121,6 +123,40 @@ func (r *Renderer) drawWorld(f game.Frame) {
 	}
 	op.GeoM.Translate(math.Round(f.PlayerX*TileSize-camX), math.Round(f.PlayerY*TileSize-camY))
 	r.world.DrawImage(r.tiles[sprites.Player], op)
+	r.drawWater(f, x0, y0, camX, camY)
+}
+
+// drawWater draws translucent water over everything else in the world, so
+// a wading player is tinted where they stand and an object sinking out of a
+// cell passes under the water rising into it. The fill height follows the
+// eased level; deep cells (exactly full in the snapshot) carry wave lines,
+// the shape cue that the player cannot enter them.
+func (r *Renderer) drawWater(f game.Frame, x0, y0 int, camX, camY float64) {
+	snap := f.Snapshot
+	if len(f.Water) != len(snap.Cells) {
+		return
+	}
+	op := &ebiten.DrawImageOptions{}
+	for y := max(y0, 0); y <= min(y0+ViewTilesH, snap.Height-1); y++ {
+		for x := max(x0, 0); x <= min(x0+ViewTilesW, snap.Width-1); x++ {
+			i := y*snap.Width + x
+			level := f.Water[i]
+			if level <= 0 {
+				continue
+			}
+			left, top := float64(x*TileSize)-camX, float64(y*TileSize)-camY
+			h := level / sim.WaterCapacity * TileSize
+			r.fillRectF(r.world, left, top+TileSize-h, TileSize, h, waterColour)
+			if y == 0 || f.Water[i-snap.Width] <= 0 {
+				r.fillRectF(r.world, left, top+TileSize-h, TileSize, 2, waterSurfaceColour)
+			}
+			if snap.Cells[i].Deep() {
+				op.GeoM.Reset()
+				op.GeoM.Translate(left, top)
+				r.world.DrawImage(r.tiles[sprites.Waves], op)
+			}
+		}
+	}
 }
 
 // objectSprite returns the sprite for a boulder or crystal occupant.
@@ -145,6 +181,14 @@ func terrainSprite(t sim.Terrain, exitOpen bool) sprites.Kind {
 			return sprites.ExitOpen
 		}
 		return sprites.ExitSealed
+	case sim.TerrainGateClosed:
+		return sprites.GateClosed
+	case sim.TerrainGateOpen:
+		return sprites.GateOpen
+	case sim.TerrainValveShut:
+		return sprites.ValveShut
+	case sim.TerrainValveOpen:
+		return sprites.ValveOpen
 	}
 	return sprites.Empty
 }
@@ -181,10 +225,14 @@ func (r *Renderer) drawText(screen *ebiten.Image, s string, x, y int) {
 	screen.DrawImage(r.text, op)
 }
 
-func (r *Renderer) fillRect(screen *ebiten.Image, x, y, w, h int, c color.RGBA) {
+func (r *Renderer) fillRect(screen *ebiten.Image, x, y, w, h int, c color.Color) {
+	r.fillRectF(screen, float64(x), float64(y), float64(w), float64(h), c)
+}
+
+func (r *Renderer) fillRectF(screen *ebiten.Image, x, y, w, h float64, c color.Color) {
 	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Scale(float64(w), float64(h))
-	op.GeoM.Translate(float64(x), float64(y))
+	op.GeoM.Scale(w, h)
+	op.GeoM.Translate(x, y)
 	op.ColorScale.ScaleWithColor(c)
 	screen.DrawImage(r.pixel, op)
 }

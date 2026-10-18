@@ -9,8 +9,9 @@ type Sim struct {
 	seed    uint64
 	exits   []Pos // exit cells in row-major order; terrain never changes
 	st      state
-	updated []bool // gravity scratch: cells whose object already moved this step
-	pushed  int    // index of the boulder pushed this tick, or -1
+	updated []bool  // gravity scratch: cells whose object already moved this step
+	pushed  int     // index of the boulder pushed this tick, or -1
+	level   []uint8 // water scratch: levels the spread is computed from
 }
 
 // state is everything Reset restores. Every field must be covered by
@@ -32,7 +33,7 @@ func New(c Cave, seed uint64) (*Sim, error) {
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("sim: invalid cave: %w", err)
 	}
-	s := &Sim{initial: c.Clone(), seed: seed, updated: make([]bool, len(c.Cells))}
+	s := &Sim{initial: c.Clone(), seed: seed, updated: make([]bool, len(c.Cells)), level: make([]uint8, len(c.Cells))}
 	for i, cell := range s.initial.Cells {
 		if cell.Terrain == TerrainExit {
 			s.exits = append(s.exits, Pos{i % c.Width, i / c.Width})
@@ -74,6 +75,7 @@ func (s *Sim) Step(in Input) []Event {
 	if s.st.status == StatusPlaying {
 		if s.st.tick%GravityIntervalTicks == 0 {
 			events = s.stepGravity(events)
+			s.stepWater()
 		}
 		if s.st.status == StatusPlaying {
 			events = s.stepQuota(events)
@@ -83,12 +85,18 @@ func (s *Sim) Step(in Input) []Event {
 	return events
 }
 
-// stepPlayer is the player phase: cooldown, then at most one move.
+// stepPlayer is the player phase: cooldown, then at most one action: turn
+// an adjacent valve, or move.
 func (s *Sim) stepPlayer(in Input, events []Event) []Event {
 	st := &s.st
 	if st.moveCooldown > 0 {
 		st.moveCooldown--
 		return events
+	}
+	if in.Interact {
+		if m, ok := s.adjacentMechanism(); ok {
+			return s.turnValve(m, events)
+		}
 	}
 	if in.Move < DirUp || in.Move > DirRight {
 		return events
@@ -99,17 +107,21 @@ func (s *Sim) stepPlayer(in Input, events []Event) []Event {
 	}
 	dst := &st.cells[s.initial.Index(to)]
 	switch dst.Terrain {
-	case TerrainWall:
+	case TerrainWall, TerrainGateClosed, TerrainValveShut, TerrainValveOpen:
 		return events
 	case TerrainExit:
 		if !st.exitOpen {
 			return append(events, Event{Tick: st.tick, Kind: EventExitSealed, Pos: to})
 		}
 	}
+	if dst.Deep() {
+		return append(events, Event{Tick: st.tick, Kind: EventTooDeep, Pos: to})
+	}
 
 	// A boulder can only be pushed: horizontally, while resting, one cell into
 	// empty floor. Anything else (a second boulder, earth, a wall, a crystal,
-	// the exit, the cave edge) blocks the push and the move.
+	// the exit, a gate, the cave edge) blocks the push and the move. Water
+	// beyond does not: it is displaced into the boulder's old cell.
 	var pushedTo Pos
 	pushed := false
 	if dst.Occupant == OccupantBoulder {
@@ -118,15 +130,15 @@ func (s *Sim) stepPlayer(in Input, events []Event) []Event {
 			!s.initial.InBounds(beyond) || !st.cells[s.initial.Index(beyond)].Empty() {
 			return events
 		}
-		st.cells[s.initial.Index(beyond)] = Cell{Terrain: TerrainEmpty, Occupant: OccupantBoulder}
-		dst.Occupant = OccupantNone
+		s.shift(to, beyond, false)
 		pushedTo, pushed = beyond, true
 		s.pushed = s.initial.Index(beyond)
 	}
 
 	// The move succeeds. The only player is the mover and pushing emptied a
 	// boulder cell, so the destination now holds no occupant or a crystal,
-	// which may be falling: walking into it still collects it.
+	// which may be falling: walking into it still collects it. Water in the
+	// destination stays; the player wades in it.
 	from := st.player
 	dug := dst.Terrain == TerrainEarth
 	collected := dst.Occupant == OccupantCrystal
@@ -174,7 +186,7 @@ func (s *Sim) stepGravity(events []Event) []Event {
 		for x := range w {
 			i := y*w + x
 			c := s.st.cells[i]
-			if c.Occupant.Falls() && c.Terrain == TerrainEmpty && !s.updated[i] {
+			if c.Occupant.Falls() && c.Terrain.Floor() && !s.updated[i] {
 				events = s.updateFalling(Pos{x, y}, events)
 			}
 		}
@@ -222,10 +234,111 @@ func (s *Sim) updateFalling(p Pos, events []Event) []Event {
 // moveObject moves the boulder or crystal at from to the empty cell to,
 // marks it as falling and as updated for the rest of this gravity step.
 func (s *Sim) moveObject(from, to Pos) {
-	fi, ti := s.initial.Index(from), s.initial.Index(to)
-	s.st.cells[ti] = Cell{Terrain: TerrainEmpty, Occupant: s.st.cells[fi].Occupant, Falling: true}
-	s.st.cells[fi] = Cell{Terrain: TerrainEmpty}
-	s.updated[ti] = true
+	s.shift(from, to, true)
+	s.updated[s.initial.Index(to)] = true
+}
+
+// shift moves the boulder or crystal at from into the empty cell to. Any
+// water in to is displaced into from, which the object leaves holding no
+// water, so the swap always fits and conserves water. Terrain stays put.
+func (s *Sim) shift(from, to Pos, falling bool) {
+	f, t := &s.st.cells[s.initial.Index(from)], &s.st.cells[s.initial.Index(to)]
+	t.Occupant, t.Falling = f.Occupant, falling
+	f.Occupant, f.Falling = OccupantNone, false
+	f.Water, t.Water = t.Water, 0
+}
+
+// stepWater is the water phase, after gravity on the same ticks. Water
+// first falls, then spreads sideways; it only enters cells that hold water
+// (see Cell.HoldsWater), so walls, earth, closed gates, valves, the exit,
+// objects and the cave edge all contain it. Every transfer moves units
+// between two cells, so the total never changes.
+//
+//  1. Fall: rows bottom to top; each cell pours as much as fits into the
+//     cell below. Water moves at most one cell down per step.
+//  2. Spread: for every pair of side-by-side cells, if one holds at least
+//     two units more than the other, one unit flows to the lower. All pairs
+//     are judged on the levels after the fall and applied together, so the
+//     scan order cannot favour a direction.
+func (s *Sim) stepWater() {
+	w, h := s.initial.Width, s.initial.Height
+	cells := s.st.cells
+	for y := h - 2; y >= 0; y-- {
+		for x := range w {
+			c, b := &cells[y*w+x], &cells[(y+1)*w+x]
+			if c.Water == 0 || !b.HoldsWater() {
+				continue
+			}
+			n := min(c.Water, WaterCapacity-b.Water)
+			c.Water -= n
+			b.Water += n
+		}
+	}
+	for i := range cells {
+		s.level[i] = cells[i].Water
+	}
+	for y := range h {
+		for x := range w - 1 {
+			i := y*w + x
+			if !cells[i].HoldsWater() || !cells[i+1].HoldsWater() {
+				continue
+			}
+			switch a, b := s.level[i], s.level[i+1]; {
+			case a >= b+2:
+				cells[i].Water--
+				cells[i+1].Water++
+			case b >= a+2:
+				cells[i+1].Water--
+				cells[i].Water++
+			}
+		}
+	}
+}
+
+// adjacentMechanism returns the index of the mechanism whose valve is next
+// to the player, checking up, down, left, right in that order.
+func (s *Sim) adjacentMechanism() (int, bool) {
+	for _, d := range [...]Dir{DirUp, DirDown, DirLeft, DirRight} {
+		p := s.st.player.Add(d)
+		if !s.initial.InBounds(p) || !s.st.cells[s.initial.Index(p)].Terrain.Valve() {
+			continue
+		}
+		for i, m := range s.initial.Mechanisms {
+			if m.Valve == p {
+				return i, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// turnValve opens a shut valve's gates, or closes an open valve's gates if
+// every one of them is clear: no occupant and no water. A jammed valve
+// changes nothing and, like a blocked move, does not start the cooldown.
+func (s *Sim) turnValve(m int, events []Event) []Event {
+	st := &s.st
+	mech := s.initial.Mechanisms[m]
+	valve := &st.cells[s.initial.Index(mech.Valve)]
+	opening := valve.Terrain == TerrainValveShut
+	if !opening {
+		for _, g := range mech.Gates {
+			if c := st.cells[s.initial.Index(g)]; c.Occupant != OccupantNone || c.Water > 0 {
+				return append(events, Event{Tick: st.tick, Kind: EventGateJammed, Pos: g})
+			}
+		}
+	}
+	gate, valveTo, kind := TerrainGateClosed, TerrainValveShut, EventGateClosed
+	if opening {
+		gate, valveTo, kind = TerrainGateOpen, TerrainValveOpen, EventGateOpened
+	}
+	valve.Terrain = valveTo
+	events = append(events, Event{Tick: st.tick, Kind: EventValveTurned, Pos: mech.Valve})
+	for _, g := range mech.Gates {
+		st.cells[s.initial.Index(g)].Terrain = gate
+		events = append(events, Event{Tick: st.tick, Kind: kind, Pos: g})
+	}
+	st.moveCooldown = MoveIntervalTicks - 1
+	return events
 }
 
 // stepQuota opens the exit once the quota is met.
@@ -279,6 +392,27 @@ func (s *Sim) Boulders() int {
 		}
 	}
 	return n
+}
+
+// Water returns the total water in the cave, in units. The rules conserve
+// it: it never changes after New.
+func (s *Sim) Water() int {
+	n := 0
+	for _, c := range s.st.cells {
+		n += int(c.Water)
+	}
+	return n
+}
+
+// AdjacentValve returns the valve an Interact input would turn this tick,
+// if any: the first valve next to the player, checking up, down, left,
+// right. Whether it opens or closes follows from its terrain.
+func (s *Sim) AdjacentValve() (Pos, bool) {
+	m, ok := s.adjacentMechanism()
+	if !ok {
+		return Pos{}, false
+	}
+	return s.initial.Mechanisms[m].Valve, true
 }
 
 // ExitOpen reports whether the quota has been met.

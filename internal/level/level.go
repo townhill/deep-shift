@@ -1,21 +1,28 @@
 // Package level reads, validates and fingerprints authored cave files.
 //
-// Cave files are JSON with these fields (all required except metadata):
+// Cave files are JSON with these fields (all required except mechanisms and
+// metadata):
 //
 //	{
-//	  "format_version": 2,          // 1 or 2; see below
+//	  "format_version": 3,          // 1 to 3; see below
 //	  "id": "test_cave",            // ^[a-z0-9][a-z0-9_]*$, at most 64 bytes
 //	  "title": "Proving Ground",    // shown in the HUD, at most 80 characters
 //	  "width": 40, "height": 24,    // 1..256 each
 //	  "seed": 20261017,             // 0..2^53-1, so float64 JSON tools keep it exact
 //	  "required_crystals": 8,       // 0..number of '*' tiles
 //	  "rows": ["####", "#@E#", ...],// height strings of width symbols each
+//	  "mechanisms": [               // version 3; links each valve to its gates
+//	    {"valve": {"x": 4, "y": 2}, "gates": [{"x": 9, "y": 5}]}
+//	  ],
 //	  "metadata": {"author": "..."} // optional free-form strings; ignored by rules
 //	}
 //
 // Row symbols are the shared legend in internal/sim (sim.SymbolLegend).
-// Version 2 adds the boulder 'O'; version 1 files are still read unchanged
-// and may not contain it.
+// Version 2 adds the boulder 'O'. Version 3 adds water ('~' deep, '1'-'3'
+// shallow), gates ('G' closed, 'g' open) and valves ('V' shut, 'v' open),
+// with mechanisms: every valve and gate is listed in exactly one, and a
+// mechanism's gates are open exactly when its valve is. Older files are
+// still read unchanged and may not contain newer symbols.
 // Each cave must contain exactly one player start '@' and exactly one exit
 // 'E'. Unknown fields are rejected so typos surface instead of being ignored.
 package level
@@ -41,13 +48,25 @@ import (
 
 // FormatVersion is the newest cave file version this build reads; new caves
 // should use it.
-const FormatVersion = 2
+const FormatVersion = 3
 
 // MinFormatVersion is the oldest cave file version this build still reads.
 const MinFormatVersion = 1
 
-// boulderFormatVersion is the first version whose rows may contain boulders.
-const boulderFormatVersion = 2
+// mechanismFormatVersion is the first version with water, gates, valves and
+// the mechanisms field.
+const mechanismFormatVersion = 3
+
+// symbolVersion returns the first format version whose rows may contain r.
+func symbolVersion(r rune) int {
+	switch r {
+	case sim.SymbolBoulder:
+		return 2
+	case sim.SymbolDeepWater, '1', '2', '3', sim.SymbolGateClosed, sim.SymbolGateOpen, sim.SymbolValveShut, sim.SymbolValveOpen:
+		return mechanismFormatVersion
+	}
+	return 1
+}
 
 // MaxSeed is the largest seed accepted: 2^53-1, the largest integer every
 // JSON implementation (including float64-based ones) round-trips exactly.
@@ -70,6 +89,7 @@ type Level struct {
 	Seed             uint64
 	RequiredCrystals int
 	Rows             []string
+	Mechanisms       []sim.Mechanism
 	Metadata         map[string]string
 
 	cave sim.Cave
@@ -82,9 +102,10 @@ func (l *Level) Cave() sim.Cave { return l.cave.Clone() }
 func (l *Level) Crystals() int { return l.cave.CountOccupant(sim.OccupantCrystal) }
 
 // Checksum fingerprints the gameplay-relevant content: format version,
-// dimensions, seed, quota and rows. Title and metadata are excluded, so
-// cosmetic edits do not invalidate replays; any change that could alter a
-// simulation does.
+// dimensions, seed, quota, rows and mechanisms. Title and metadata are
+// excluded, so cosmetic edits do not invalidate replays; any change that
+// could alter a simulation does. A cave without mechanisms hashes exactly as
+// it did before mechanisms existed.
 func (l *Level) Checksum() string {
 	h := sha256.New()
 	h.Write([]byte("deep-shift/level-checksum/v1\x00"))
@@ -98,6 +119,20 @@ func (l *Level) Checksum() string {
 	for _, r := range l.Rows {
 		h.Write([]byte(r))
 		h.Write([]byte{'\n'})
+	}
+	if len(l.Mechanisms) > 0 {
+		b = binary.LittleEndian.AppendUint32(b[:0], uint32(len(l.Mechanisms)))
+		for _, m := range l.Mechanisms {
+			b = binary.LittleEndian.AppendUint32(b, uint32(m.Valve.X))
+			b = binary.LittleEndian.AppendUint32(b, uint32(m.Valve.Y))
+			b = binary.LittleEndian.AppendUint32(b, uint32(len(m.Gates)))
+			for _, g := range m.Gates {
+				b = binary.LittleEndian.AppendUint32(b, uint32(g.X))
+				b = binary.LittleEndian.AppendUint32(b, uint32(g.Y))
+			}
+		}
+		h.Write([]byte("mechanisms\x00"))
+		h.Write(b)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -137,11 +172,24 @@ type file struct {
 	Seed             *uint64           `json:"seed"`
 	RequiredCrystals *int              `json:"required_crystals"`
 	Rows             []string          `json:"rows"`
+	Mechanisms       json.RawMessage   `json:"mechanisms"`
 	Metadata         map[string]string `json:"metadata"`
 }
 
-// fields lists the format-version-1 keys, in documentation order.
-var fields = []string{"format_version", "id", "title", "width", "height", "seed", "required_crystals", "rows", "metadata"}
+// posFile and mechanismFile are the on-disk shape of mechanisms.
+type posFile struct {
+	X *int `json:"x"`
+	Y *int `json:"y"`
+}
+
+type mechanismFile struct {
+	Valve *posFile  `json:"valve"`
+	Gates []posFile `json:"gates"`
+}
+
+// fields lists the keys of the newest format version, in documentation
+// order.
+var fields = []string{"format_version", "id", "title", "width", "height", "seed", "required_crystals", "rows", "mechanisms", "metadata"}
 
 // Parse decodes and validates a cave file. source names the file in error
 // messages. On validation failure the error is a *ValidationError.
@@ -331,6 +379,7 @@ func validate(source string, f *file) (*Level, error) {
 	}
 
 	crystals := validateRows(f.Rows, l, add)
+	validateMechanisms(f.Mechanisms, l, add)
 
 	switch {
 	case f.RequiredCrystals == nil:
@@ -347,6 +396,7 @@ func validate(source string, f *file) (*Level, error) {
 		return nil, v
 	}
 	l.cave.RequiredCrystals = l.RequiredCrystals
+	l.cave.Mechanisms = l.Mechanisms
 	// Defence in depth: the simulation's own invariants must agree.
 	if err := l.cave.Validate(); err != nil {
 		add("rows", "rejected by the simulation: %v", err)
@@ -380,6 +430,7 @@ func validateRows(rows []string, l *Level, add func(field, format string, args .
 			continue
 		}
 		var unknown, tooNew []string
+		need := 0
 		x := 0
 		for _, r := range row {
 			cell, ok := sim.CellForSymbol(r)
@@ -387,8 +438,9 @@ func validateRows(rows []string, l *Level, add func(field, format string, args .
 				unknown = append(unknown, fmt.Sprintf("%q at x=%d", r, x))
 				gridOK = false
 			}
-			if r == sim.SymbolBoulder && l.FormatVersion < boulderFormatVersion {
-				tooNew = append(tooNew, fmt.Sprintf("x=%d", x))
+			if v := symbolVersion(r); ok && v > l.FormatVersion {
+				tooNew = append(tooNew, fmt.Sprintf("%q at x=%d", r, x))
+				need = max(need, v)
 				gridOK = false
 			}
 			switch r {
@@ -406,8 +458,8 @@ func validateRows(rows []string, l *Level, add func(field, format string, args .
 			add(field, "unknown tile symbol(s) %s; valid symbols are %s", elide(unknown), sim.SymbolLegend)
 		}
 		if len(tooNew) > 0 {
-			add(field, "boulder(s) '%c' at %s need format_version %d or later (this file is version %d)",
-				sim.SymbolBoulder, elide(tooNew), boulderFormatVersion, l.FormatVersion)
+			add(field, "symbol(s) %s need format_version %d or later (this file is version %d)",
+				elide(tooNew), need, l.FormatVersion)
 		}
 	}
 	countCheck := func(name string, sym rune, found []sim.Pos) {
@@ -429,6 +481,84 @@ func validateRows(rows []string, l *Level, add func(field, format string, args .
 		l.cave = sim.Cave{Width: l.Width, Height: l.Height, Cells: cells}
 	}
 	return crystals
+}
+
+// validateMechanisms decodes the mechanisms field and checks it against the
+// grid in l.cave (when the grid is usable), filling l.Mechanisms.
+func validateMechanisms(raw json.RawMessage, l *Level, add func(field, format string, args ...any)) {
+	var files []mechanismFile
+	if raw != nil {
+		if l.FormatVersion < mechanismFormatVersion {
+			add("mechanisms", "needs format_version %d or later (this file is version %d)", mechanismFormatVersion, l.FormatVersion)
+			return
+		}
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&files); err != nil {
+			add("mechanisms", "must be a list of {\"valve\": {\"x\", \"y\"}, \"gates\": [{\"x\", \"y\"}, ...]}: %s",
+				strings.TrimPrefix(err.Error(), "json: "))
+			return
+		}
+	}
+	grid := l.cave.Cells != nil
+	cellAt := func(p sim.Pos) sim.Cell { return l.cave.Cells[p.Y*l.Width+p.X] }
+	cell := func(p sim.Pos) sim.Terrain { return cellAt(p).Terrain }
+	symbol := func(p sim.Pos) rune { return sim.Symbol(cellAt(p), false) }
+	used := map[sim.Pos]string{} // valve or gate position → the field that claimed it
+	pos := func(field string, pf *posFile, want func(sim.Terrain) bool, what string, symbols string) (sim.Pos, bool) {
+		switch {
+		case pf == nil:
+			add(field, "missing")
+		case pf.X == nil || pf.Y == nil:
+			add(field, "needs both \"x\" and \"y\"")
+		case *pf.X < 0 || *pf.Y < 0 || l.Width > 0 && *pf.X >= l.Width || l.Height > 0 && *pf.Y >= l.Height:
+			add(field, "(%d,%d) is outside the %dx%d cave", *pf.X, *pf.Y, l.Width, l.Height)
+		default:
+			p := sim.Pos{X: *pf.X, Y: *pf.Y}
+			if prev, dup := used[p]; dup {
+				add(field, "%s %s is already listed at %s", what, p, prev)
+				return p, false
+			}
+			used[p] = field
+			if grid && !want(cell(p)) {
+				add(field, "%s is %q in rows, not a %s (%s)", p, symbol(p), what, symbols)
+				return p, false
+			}
+			return p, true
+		}
+		return sim.Pos{}, false
+	}
+	for i, mf := range files {
+		field := fmt.Sprintf("mechanisms[%d]", i)
+		valve, valveOK := pos(field+".valve", mf.Valve, sim.Terrain.Valve, "valve", "'V' or 'v'")
+		if len(mf.Gates) == 0 {
+			add(field+".gates", "missing or empty; a valve must operate at least one gate")
+		}
+		m := sim.Mechanism{Valve: valve}
+		for j := range mf.Gates {
+			gf := fmt.Sprintf("%s.gates[%d]", field, j)
+			g, ok := pos(gf, &mf.Gates[j], sim.Terrain.Gate, "gate", "'G' or 'g'")
+			if ok && valveOK && (cell(g) == sim.TerrainGateOpen) != (cell(valve) == sim.TerrainValveOpen) {
+				add(gf, "gate %s is %q but valve %s is %q; a gate is open ('g') exactly when its valve is ('v')",
+					g, symbol(g), valve, symbol(valve))
+			}
+			m.Gates = append(m.Gates, g)
+		}
+		l.Mechanisms = append(l.Mechanisms, m)
+	}
+	if !grid {
+		return
+	}
+	var orphans []string
+	for i, c := range l.cave.Cells {
+		p := sim.Pos{X: i % l.Width, Y: i / l.Width}
+		if _, listed := used[p]; !listed && (c.Terrain.Valve() || c.Terrain.Gate()) {
+			orphans = append(orphans, fmt.Sprintf("%q at %s", sim.Symbol(c, false), p))
+		}
+	}
+	if len(orphans) > 0 {
+		add("mechanisms", "every valve and gate must be listed in a mechanism; not listed: %s", elide(orphans))
+	}
 }
 
 func elide(items []string) string {

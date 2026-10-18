@@ -145,13 +145,14 @@ func readControls() game.Controls {
 		return false
 	}
 	return game.Controls{
-		Up:      held(ebiten.KeyArrowUp, ebiten.KeyW),
-		Down:    held(ebiten.KeyArrowDown, ebiten.KeyS),
-		Left:    held(ebiten.KeyArrowLeft, ebiten.KeyA),
-		Right:   held(ebiten.KeyArrowRight, ebiten.KeyD),
-		Pause:   inpututil.IsKeyJustPressed(ebiten.KeyEscape),
-		Restart: inpututil.IsKeyJustPressed(ebiten.KeyR),
-		Next:    inpututil.IsKeyJustPressed(ebiten.KeyN),
+		Up:       held(ebiten.KeyArrowUp, ebiten.KeyW),
+		Down:     held(ebiten.KeyArrowDown, ebiten.KeyS),
+		Left:     held(ebiten.KeyArrowLeft, ebiten.KeyA),
+		Right:    held(ebiten.KeyArrowRight, ebiten.KeyD),
+		Interact: held(ebiten.KeySpace, ebiten.KeyEnter, ebiten.KeyNumpadEnter),
+		Pause:    inpututil.IsKeyJustPressed(ebiten.KeyEscape),
+		Restart:  inpututil.IsKeyJustPressed(ebiten.KeyR),
+		Next:     inpututil.IsKeyJustPressed(ebiten.KeyN),
 	}
 }
 

@@ -17,6 +17,7 @@
 //	  "ticks": 600,                          // ticks to simulate
 //	  "commands": [
 //	    {"tick": 0, "action": "right"},      // strictly increasing ticks < ticks
+//	    {"tick": 9, "action": "interact"},   // turn the adjacent valve (rule version 3)
 //	    ...
 //	  ],
 //	  "expect": {                            // optional golden results
@@ -25,9 +26,10 @@
 //	  }
 //	}
 //
-// A command is the Move input for exactly one tick; ticks without a command
-// have no input. Commands given while the movement window is closed are
-// ignored by the rules, deterministically.
+// A command is the input for exactly one tick: a move direction, or
+// "interact" (sim.Input.Interact). Ticks without a command have no input.
+// Commands given while the action window is closed are ignored by the rules,
+// deterministically.
 package replay
 
 import (
@@ -66,10 +68,22 @@ type Replay struct {
 	Expect        *Expect   `json:"expect,omitempty"`
 }
 
-// Command is the move input for one tick.
+// Command is the input for one tick.
 type Command struct {
 	Tick   uint64 `json:"tick"`
-	Action string `json:"action"` // "up", "down", "left" or "right"
+	Action string `json:"action"` // "up", "down", "left", "right" or "interact"
+}
+
+// ActionInteract is the command action for sim.Input.Interact.
+const ActionInteract = "interact"
+
+// Input returns the simulation input for c's action.
+func (c Command) Input() (sim.Input, bool) {
+	if c.Action == ActionInteract {
+		return sim.Input{Interact: true}, true
+	}
+	d, ok := sim.ParseDir(c.Action)
+	return sim.Input{Move: d}, ok
 }
 
 // Expect holds golden results. Fixture changes need review and a reason;
@@ -137,8 +151,8 @@ func (r *Replay) Validate() error {
 		errs = append(errs, fmt.Errorf("ticks %d out of range 1..%d", r.Ticks, MaxTicks))
 	}
 	for i, c := range r.Commands {
-		if _, ok := sim.ParseDir(c.Action); !ok {
-			errs = append(errs, fmt.Errorf("commands[%d]: unknown action %q (want up, down, left or right)", i, c.Action))
+		if _, ok := c.Input(); !ok {
+			errs = append(errs, fmt.Errorf("commands[%d]: unknown action %q (want up, down, left, right or interact)", i, c.Action))
 		}
 		if c.Tick >= r.Ticks {
 			errs = append(errs, fmt.Errorf("commands[%d]: tick %d is not before ticks %d", i, c.Tick, r.Ticks))
@@ -182,7 +196,7 @@ func RunObserved(r *Replay, l *level.Level, observe func(tick uint64, events []s
 	for tick := uint64(0); tick < r.Ticks; tick++ {
 		var in sim.Input
 		if next < len(r.Commands) && r.Commands[next].Tick == tick {
-			in.Move, _ = sim.ParseDir(r.Commands[next].Action)
+			in, _ = r.Commands[next].Input()
 			next++
 		}
 		before := s.Tick()

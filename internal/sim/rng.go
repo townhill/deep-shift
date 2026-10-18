@@ -5,7 +5,7 @@ package sim
 // pinned by this repository, its whole state is one serialisable uint64, and
 // it can be folded into the state hash.
 //
-// No rule in rule version 1 consumes randomness; the generator exists so the
+// No rule up to rule version 3 consumes randomness; the generator exists so the
 // determinism contract (seed in, identical hashes out) is in place before
 // rules that need it arrive.
 type SplitMix64 struct {

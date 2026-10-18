@@ -34,7 +34,8 @@ const UpdatesPerTick = UpdatesPerSecond / sim.TicksPerSecond
 const SlideUpdates = 6
 
 // ObjectSlideUpdates is how long a boulder or crystal sprite glides between
-// cells: one gravity interval, so a falling object moves continuously.
+// cells: one gravity interval, so a falling object moves continuously. Water
+// levels are eased over the same time.
 const ObjectSlideUpdates = sim.GravityIntervalTicks * UpdatesPerTick
 
 // promptUpdates is how long transient HUD prompts stay visible.
@@ -43,6 +44,7 @@ const promptUpdates = 2 * UpdatesPerSecond
 // Controls is the platform-neutral input for one update.
 type Controls struct {
 	Up, Down, Left, Right bool // held during this update
+	Interact              bool // held during this update; a press turns a valve once
 	Pause                 bool // pressed this update (edge-triggered)
 	Restart               bool // pressed this update (edge-triggered)
 	Next                  bool // pressed this update (edge-triggered); handled by Playlist
@@ -70,11 +72,13 @@ type Session struct {
 	sim   *sim.Sim
 	snap  sim.Snapshot
 
-	paused  bool
-	phase   int       // updates since the last tick, 0..UpdatesPerTick-1
-	held    [5]bool   // indexed by sim.Dir
-	order   []sim.Dir // held directions, most recently pressed last
-	pending sim.Dir   // a press not yet consumed by a movement window
+	paused       bool
+	phase        int       // updates since the last tick, 0..UpdatesPerTick-1
+	held         [5]bool   // indexed by sim.Dir
+	order        []sim.Dir // held directions, most recently pressed last
+	pending      sim.Dir   // a press not yet consumed by a movement window
+	interact     bool      // an Interact press not yet consumed by an action window
+	interactHeld bool      // Interact was held on the previous update
 
 	commands []replay.Command // every move input sent this attempt
 	trace    hash.Hash        // SHA-256 over every state hash this attempt (see replay.Result)
@@ -88,6 +92,11 @@ type Session struct {
 	prompt             string
 	promptLeft         int
 	camera             Camera
+
+	// Water levels are eased from waterFrom to the snapshot over
+	// ObjectSlideUpdates after each change; water is the Frame buffer.
+	waterFrom, water []float64
+	waterAge         int
 }
 
 type objectSlide struct {
@@ -113,6 +122,8 @@ func NewSession(l *level.Level, viewW, viewH int) (*Session, error) {
 // Update advances the session by one platform update.
 func (s *Session) Update(c Controls) {
 	s.trackDirections(c)
+	interactPressed := c.Interact && !s.interactHeld
+	s.interactHeld = c.Interact
 	ended := s.Ended()
 	switch {
 	case c.Restart && (s.paused || ended):
@@ -121,9 +132,13 @@ func (s *Session) Update(c Controls) {
 	case c.Pause && !ended:
 		s.paused = !s.paused
 		s.pending = sim.DirNone // input is not consumed across a pause
+		s.interact = false
 	}
 	if s.paused {
 		return
+	}
+	if interactPressed {
+		s.interact = true
 	}
 	if !ended {
 		s.phase++
@@ -154,26 +169,38 @@ func (s *Session) trackDirections(c Controls) {
 	}
 }
 
-// tick runs one simulation step. The move input is chosen only when the
-// movement window is open, so recorded commands are exactly the effective
-// ones: the latched press first, otherwise the most recently pressed key
-// still held.
+// tick runs one simulation step. Input is chosen only when the action window
+// is open, so recorded commands are exactly the effective ones: a latched
+// Interact press if a valve is next to the player, otherwise the latched
+// direction press, otherwise the most recently pressed key still held. An
+// Interact press with no valve in reach is dropped.
 func (s *Session) tick() {
 	var in sim.Input
 	if s.sim.MoveReady() {
-		in.Move = s.pending
-		if in.Move == sim.DirNone && len(s.order) > 0 {
-			in.Move = s.order[len(s.order)-1]
+		if _, ok := s.sim.AdjacentValve(); ok && s.interact {
+			in.Interact = true
+		} else {
+			in.Move = s.pending
+			if in.Move == sim.DirNone && len(s.order) > 0 {
+				in.Move = s.order[len(s.order)-1]
+			}
 		}
 		s.pending = sim.DirNone
+		s.interact = false
 	}
-	if in.Move != sim.DirNone {
+	switch {
+	case in.Interact:
+		s.commands = append(s.commands, replay.Command{Tick: s.sim.Tick(), Action: replay.ActionInteract})
+	case in.Move != sim.DirNone:
 		s.commands = append(s.commands, replay.Command{Tick: s.sim.Tick(), Action: in.Move.String()})
 	}
 	events := s.sim.Step(in)
 	h := s.sim.StateHash()
 	s.trace.Write(h[:])
+	prev := s.snap
 	s.snap = s.sim.Snapshot()
+	s.easeWater(prev)
+	gateNews := false
 	for _, e := range events {
 		switch e.Kind {
 		case sim.EventMoved:
@@ -188,11 +215,45 @@ func (s *Session) tick() {
 			s.setPrompt(fmt.Sprintf("Exit sealed: collect %d more %s", need, plural(need, "crystal")))
 		case sim.EventExitOpened:
 			s.setPrompt("Quota met: the exit is open")
+		case sim.EventTooDeep:
+			s.setPrompt("Too deep to wade: find a way to lower the water")
+		case sim.EventGateOpened, sim.EventGateClosed:
+			if !gateNews {
+				gateNews = true
+				if e.Kind == sim.EventGateOpened {
+					s.setPrompt("Sluice gate open")
+				} else {
+					s.setPrompt("Sluice gate closed")
+				}
+			}
+		case sim.EventGateJammed:
+			s.setPrompt("The gate is blocked: clear it before closing")
 		}
 	}
 	if s.Ended() {
 		s.finished = true
 	}
+}
+
+// easeWater starts a new easing whenever a tick changed any water level,
+// from wherever the display currently is.
+func (s *Session) easeWater(prev sim.Snapshot) {
+	for i, c := range s.snap.Cells {
+		if prev.Cells[i].Water != c.Water {
+			for j := range s.waterFrom {
+				s.waterFrom[j] = s.waterLevel(j, prev)
+			}
+			s.waterAge = 0
+			return
+		}
+	}
+}
+
+// waterLevel is the displayed water level of cell i, easing from waterFrom
+// towards target's level.
+func (s *Session) waterLevel(i int, target sim.Snapshot) float64 {
+	t := min(1, float64(s.waterAge)/ObjectSlideUpdates)
+	return s.waterFrom[i] + (float64(target.Cells[i].Water)-s.waterFrom[i])*t
 }
 
 // startObjectSlide begins a glide from the object's current visual position
@@ -228,6 +289,9 @@ func (s *Session) advancePresentation() {
 	if s.promptLeft > 0 {
 		s.promptLeft--
 	}
+	if s.waterAge < ObjectSlideUpdates {
+		s.waterAge++
+	}
 	px, py := s.PlayerPosition()
 	s.camera.Follow(px+0.5, py+0.5, s.facing, s.snap.Width, s.snap.Height)
 }
@@ -239,6 +303,7 @@ func (s *Session) Restart() {
 	s.paused = false
 	s.phase = 0
 	s.pending = sim.DirNone
+	s.interact = false
 	s.resetAttempt()
 	s.resetPresentation()
 	s.setPrompt("Cave restarted")
@@ -260,6 +325,12 @@ func (s *Session) resetPresentation() {
 	s.snap = s.sim.Snapshot()
 	s.slideFrom, s.slideTo, s.slide = s.snap.Player, s.snap.Player, SlideUpdates
 	s.facing = sim.DirNone
+	s.waterFrom = make([]float64, len(s.snap.Cells))
+	s.water = make([]float64, len(s.snap.Cells))
+	for i, c := range s.snap.Cells {
+		s.waterFrom[i] = float64(c.Water)
+	}
+	s.waterAge = ObjectSlideUpdates
 	s.camera.Snap()
 	px, py := s.PlayerPosition()
 	s.camera.Follow(px+0.5, py+0.5, s.facing, s.snap.Width, s.snap.Height)
@@ -347,7 +418,7 @@ type HUD struct {
 }
 
 // ControlsHint is shown when no prompt is active.
-const ControlsHint = "Arrows/WASD: move   Esc: pause   F: fullscreen"
+const ControlsHint = "Arrows/WASD: move   Space: valve   Esc: pause   F: fullscreen"
 
 // HUD returns the current HUD text.
 func (s *Session) HUD() HUD {
@@ -359,6 +430,13 @@ func (s *Session) HUD() HUD {
 		Status: fmt.Sprintf("%s   Crystals %d/%d   Exit %s   Time %s",
 			s.level.Title, s.snap.Collected, s.snap.Required, exit, clock(s.snap.Tick)),
 		Prompt: ControlsHint,
+	}
+	if v, ok := s.sim.AdjacentValve(); ok && s.snap.Status == sim.StatusPlaying {
+		if s.snap.Cell(v).Terrain == sim.TerrainValveShut {
+			h.Prompt = "Space: open the sluice gate"
+		} else {
+			h.Prompt = "Space: close the sluice gate"
+		}
 	}
 	if s.promptLeft > 0 {
 		h.Prompt = s.prompt
@@ -392,7 +470,11 @@ type Frame struct {
 	// Gliding lists boulders and crystals still sliding into their cells, in
 	// cell order; draw these at X, Y instead of at Cell.
 	Gliding []GlidingObject
-	HUD     HUD
+	// Water is the displayed water level of every cell, 0..sim.WaterCapacity,
+	// eased between ticks. Snapshot.Cells holds the exact levels. The slice
+	// is reused by the next call to Frame.
+	Water []float64
+	HUD   HUD
 }
 
 // GlidingObject is a boulder or crystal drawn between cells.
@@ -413,12 +495,16 @@ func (s *Session) Frame() Frame {
 	slices.SortFunc(gliding, func(a, b GlidingObject) int {
 		return cmp.Or(cmp.Compare(a.Cell.Y, b.Cell.Y), cmp.Compare(a.Cell.X, b.Cell.X))
 	})
+	for i := range s.water {
+		s.water[i] = s.waterLevel(i, s.snap)
+	}
 	return Frame{
 		Snapshot: s.snap,
 		PlayerX:  px, PlayerY: py,
 		CameraX: s.camera.X, CameraY: s.camera.Y,
 		Facing:  s.facing,
 		Gliding: gliding,
+		Water:   s.water,
 		HUD:     s.HUD(),
 	}
 }

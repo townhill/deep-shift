@@ -9,7 +9,9 @@ import "fmt"
 //   - 1: movement, digging, crystals, quota-sealed exit.
 //   - 2: boulders and crystals fall, roll and crush the player; boulders can
 //     be pushed.
-const RuleVersion uint32 = 2
+//   - 3: water flows (falls, then spreads) and is conserved; sluice gates
+//     opened and closed by valves; deep water blocks the player.
+const RuleVersion uint32 = 3
 
 // TicksPerSecond is the provisional logical simulation rate (SPEC §5).
 const TicksPerSecond = 20
@@ -24,6 +26,10 @@ const MoveIntervalTicks = 4
 // the player's walking speed). Provisional; tune after Mac playtesting.
 const GravityIntervalTicks = 2
 
+// WaterCapacity is the most water one cell holds. A full cell is deep water,
+// which the player cannot wade into. Provisional; see docs/PHYSICS.md.
+const WaterCapacity = 4
+
 // MaxDimension bounds cave width and height.
 const MaxDimension = 256
 
@@ -33,10 +39,14 @@ type Terrain uint8
 // Terrain values. The numeric values are part of the state-hash encoding;
 // append new values, never renumber.
 const (
-	TerrainEmpty Terrain = iota // open floor
-	TerrainEarth                // diggable soil; becomes empty when entered
-	TerrainWall                 // permanent wall; never passable
-	TerrainExit                 // exit foundation; passable only once open
+	TerrainEmpty      Terrain = iota // open floor
+	TerrainEarth                     // diggable soil; becomes empty when entered
+	TerrainWall                      // permanent wall; never passable
+	TerrainExit                      // exit foundation; passable only once open
+	TerrainGateClosed                // sluice gate, closed: blocks like a wall
+	TerrainGateOpen                  // sluice gate, open: behaves as open floor
+	TerrainValveShut                 // valve whose gates are closed; never passable
+	TerrainValveOpen                 // valve whose gates are open; never passable
 	terrainCount
 )
 
@@ -50,9 +60,28 @@ func (t Terrain) String() string {
 		return "wall"
 	case TerrainExit:
 		return "exit"
+	case TerrainGateClosed:
+		return "closed gate"
+	case TerrainGateOpen:
+		return "open gate"
+	case TerrainValveShut:
+		return "shut valve"
+	case TerrainValveOpen:
+		return "open valve"
 	}
 	return fmt.Sprintf("terrain(%d)", uint8(t))
 }
+
+// Gate reports whether t is a sluice gate, open or closed.
+func (t Terrain) Gate() bool { return t == TerrainGateClosed || t == TerrainGateOpen }
+
+// Valve reports whether t is a valve, shut or open.
+func (t Terrain) Valve() bool { return t == TerrainValveShut || t == TerrainValveOpen }
+
+// Floor reports whether t is open floor: empty ground or an open gate.
+// Objects rest, fall and roll on floor, water flows through it and the
+// player walks on it.
+func (t Terrain) Floor() bool { return t == TerrainEmpty || t == TerrainGateOpen }
 
 // Occupant is the solid object, if any, in a cell. At most one per cell.
 type Occupant uint8
@@ -88,9 +117,9 @@ func (o Occupant) Rounded() bool { return o == OccupantBoulder || o == OccupantC
 // Falls reports whether gravity acts on this occupant: boulders and crystals.
 func (o Occupant) Falls() bool { return o == OccupantBoulder || o == OccupantCrystal }
 
-// Cell is one grid square. Further layers (fluid, more metadata) will be
-// added as separate fields in later phases rather than overloading these
-// enums.
+// Cell is one grid square: a terrain, at most one occupant and a fluid
+// layer. Further layers are added as separate fields rather than by
+// overloading these enums.
 type Cell struct {
 	Terrain  Terrain
 	Occupant Occupant
@@ -99,11 +128,22 @@ type Cell struct {
 	// crushes the player, and only a resting boulder can be pushed. Always
 	// false for other occupants.
 	Falling bool
+	// Water is the fluid layer: 0..WaterCapacity units. Water shares a cell
+	// with the player but never with a boulder or crystal.
+	Water uint8
 }
 
 // Empty reports whether a falling object could move into c: open floor with
-// no occupant.
-func (c Cell) Empty() bool { return c.Terrain == TerrainEmpty && c.Occupant == OccupantNone }
+// no occupant. Water does not matter; an object entering water displaces it.
+func (c Cell) Empty() bool { return c.Terrain.Floor() && c.Occupant == OccupantNone }
+
+// HoldsWater reports whether water may occupy c: open floor without a
+// boulder or crystal.
+func (c Cell) HoldsWater() bool { return c.Terrain.Floor() && !c.Occupant.Falls() }
+
+// Deep reports whether c is full of water, too deep for the player to wade
+// into.
+func (c Cell) Deep() bool { return c.Water >= WaterCapacity }
 
 // Pos is an integer grid coordinate. The origin is the upper-left cell and Y
 // grows downward (the direction of gravity).
@@ -177,11 +217,15 @@ func ParseDir(s string) (Dir, bool) {
 	return DirNone, false
 }
 
-// Input is the logical player input applied during one tick.
+// Input is the logical player input applied during one tick. Moving and
+// interacting share the player's action window (see Sim.MoveReady); input
+// given while it is closed is ignored.
 type Input struct {
-	// Move requests a one-tile move. It is only acted on when the player's
-	// movement window is open (see Sim.MoveReady); otherwise it is ignored.
+	// Move requests a one-tile move.
 	Move Dir
+	// Interact turns the valve next to the player (see Sim.AdjacentValve).
+	// It takes precedence over Move; with no valve adjacent, Move applies.
+	Interact bool
 }
 
 // Status is the overall state of the cave attempt.
