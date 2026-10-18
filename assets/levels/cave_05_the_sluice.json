@@ -1,0 +1,46 @@
+{
+  "format_version": 3,
+  "id": "cave_05",
+  "title": "The Sluice",
+  "width": 30,
+  "height": 16,
+  "seed": 20261022,
+  "required_crystals": 6,
+  "rows": [
+    "##############################",
+    "#@  ..######.      ..........#",
+    "#   ..######.      .*........#",
+    "#...*.######..*..............#",
+    "#.....######.........O....*..#",
+    "#.....######....*............#",
+    "#.*...######   ..............#",
+    "#.....#O####   ..............#",
+    "#      .#### ##..............#",
+    "#......~~~~~~~#.......*......#",
+    "#...O.####G####.........O....#",
+    "#.....##     ##..........*...#",
+    "#.....##     ##...*..........#",
+    "#.....##     ##....#####...E.#",
+    "#.....#########..............#",
+    "###V##########################"
+  ],
+  "mechanisms": [
+    {
+      "valve": {
+        "x": 3,
+        "y": 15
+      },
+      "gates": [
+        {
+          "x": 10,
+          "y": 10
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "author": "Deep Shift project (original layout)",
+    "difficulty": "tutorial",
+    "purpose": "Water and gravity together, two ways across one flooded channel: open the sluice and let it drain into the sump, or drop the perched boulder into the channel and push it along so it shoves the water out of your way."
+  }
+}

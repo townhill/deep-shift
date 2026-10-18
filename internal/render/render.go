@@ -39,6 +39,8 @@ var (
 	hudRuleColour      = color.RGBA{60, 200, 210, 0xff}
 	waterColour        = color.NRGBA{40, 110, 200, 150}
 	waterSurfaceColour = color.NRGBA{170, 215, 245, 200}
+	menuSelectColour   = color.NRGBA{60, 200, 210, 70}
+	dimTextColour      = color.NRGBA{150, 160, 175, 255}
 )
 
 // Renderer owns the GPU images used to draw frames.
@@ -114,6 +116,7 @@ func (r *Renderer) drawWorld(f game.Frame) {
 		op.GeoM.Translate(math.Round(g.X*TileSize-camX), math.Round(g.Y*TileSize-camY))
 		r.world.DrawImage(r.tiles[k], op)
 	}
+	r.drawWater(f, x0, y0, camX, camY)
 	op.GeoM.Reset()
 	if snap.Status == sim.StatusDead {
 		// Crushed: squashed to the bottom of the cell and tinted red.
@@ -121,16 +124,23 @@ func (r *Renderer) drawWorld(f game.Frame) {
 		op.GeoM.Translate(0, TileSize*0.55)
 		op.ColorScale.Scale(1, 0.45, 0.45, 1)
 	}
-	op.GeoM.Translate(math.Round(f.PlayerX*TileSize-camX), math.Round(f.PlayerY*TileSize-camY))
+	px, py := math.Round(f.PlayerX*TileSize-camX), math.Round(f.PlayerY*TileSize-camY)
+	op.GeoM.Translate(px, py)
 	r.world.DrawImage(r.tiles[sprites.Player], op)
-	r.drawWater(f, x0, y0, camX, camY)
+	// Wading: water covers the legs in proportion to the level of the cell
+	// the player stands in, but never the head, so the player stays visible
+	// even in deep water.
+	if i := snap.Player.Y*snap.Width + snap.Player.X; i < len(f.Water) && f.Water[i] > 0 {
+		h := min(f.Water[i]/sim.WaterCapacity, 0.55) * TileSize
+		r.fillRectF(r.world, px, py+TileSize-h, TileSize, h, waterColour)
+	}
 }
 
-// drawWater draws translucent water over everything else in the world, so
-// a wading player is tinted where they stand and an object sinking out of a
-// cell passes under the water rising into it. The fill height follows the
-// eased level; deep cells (exactly full in the snapshot) carry wave lines,
-// the shape cue that the player cannot enter them.
+// drawWater draws translucent water over terrain and objects, so an object
+// sinking out of a cell passes under the water rising into it. The player is
+// drawn after it (see drawWorld). The fill height follows the eased level;
+// deep cells (exactly full in the snapshot) carry wave lines, the shape cue
+// that the player cannot enter them.
 func (r *Renderer) drawWater(f game.Frame, x0, y0 int, camX, camY float64) {
 	snap := f.Snapshot
 	if len(f.Water) != len(snap.Cells) {
@@ -215,13 +225,76 @@ func (r *Renderer) drawOverlay(screen *ebiten.Image, lines []string) {
 	}
 }
 
+// DrawPerf draws the performance overlay's lines in the small debug font,
+// on a dark backdrop at the top right of the play area.
+func (r *Renderer) DrawPerf(screen *ebiten.Image, lines []string) {
+	w := 0
+	for _, l := range lines {
+		w = max(w, len(l)*glyphW)
+	}
+	x, y := ScreenWidth-w-12, HUDHeight+4
+	r.fillRect(screen, x-4, y-2, w+8, len(lines)*glyphH+4, color.RGBA{0, 0, 0, 0xc0})
+	for i, l := range lines {
+		ebitenutil.DebugPrintAt(screen, l, x, y+i*glyphH)
+	}
+}
+
+// DrawMenu renders a title or cave-select screen: a background of floor
+// and wall tiles, the title at 4x, entries centred with the selection
+// highlighted, and a footer of key hints.
+func (r *Renderer) DrawMenu(screen *ebiten.Image, v game.MenuView) {
+	screen.Fill(backgroundColour)
+	op := &ebiten.DrawImageOptions{}
+	for y := 0; y < ScreenHeight/TileSize+1; y++ {
+		for x := 0; x < ViewTilesW; x++ {
+			k := sprites.Empty
+			if y == 0 || x == 0 || x == ViewTilesW-1 || y >= ScreenHeight/TileSize-1 {
+				k = sprites.Wall
+			}
+			op.GeoM.Reset()
+			op.GeoM.Translate(float64(x*TileSize), float64(y*TileSize))
+			screen.DrawImage(r.tiles[k], op)
+		}
+	}
+	centre := func(s string, scale int) int { return (ScreenWidth - len(s)*glyphW*scale) / 2 }
+	y := 96
+	r.drawTextScaled(screen, v.Title, centre(v.Title, 4), y, 4, color.White)
+	y += glyphH*4 + 8
+	r.drawTextScaled(screen, v.Subtitle, centre(v.Subtitle, textScale), y, textScale, dimTextColour)
+	y += lineHeight + 24
+	for _, e := range v.Entries {
+		text := e.Text
+		c := color.Color(color.White)
+		switch {
+		case e.Heading:
+			c = dimTextColour
+		case e.Selected:
+			text = "> " + text + " <"
+			r.fillRect(screen, 2*TileSize, y-4, ScreenWidth-4*TileSize, lineHeight+4, menuSelectColour)
+		}
+		r.drawTextScaled(screen, text, centre(text, textScale), y, textScale, c)
+		y += lineHeight + 6
+	}
+	r.drawTextScaled(screen, v.Footer, centre(v.Footer, textScale), ScreenHeight-2*TileSize-lineHeight/2, textScale, color.White)
+	if r.build != "" {
+		ebitenutil.DebugPrintAt(screen, "build "+r.build, 8, ScreenHeight-glyphH-4)
+	}
+}
+
 // drawText draws one line of debug-font text at 2x, nearest-neighbour.
 func (r *Renderer) drawText(screen *ebiten.Image, s string, x, y int) {
+	r.drawTextScaled(screen, s, x, y, textScale, color.White)
+}
+
+// drawTextScaled draws one line of debug-font text at an integer scale in
+// colour c, nearest-neighbour.
+func (r *Renderer) drawTextScaled(screen *ebiten.Image, s string, x, y, scale int, c color.Color) {
 	r.text.Clear()
 	ebitenutil.DebugPrintAt(r.text, s, 0, 0)
 	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Scale(textScale, textScale)
+	op.GeoM.Scale(float64(scale), float64(scale))
 	op.GeoM.Translate(float64(x), float64(y))
+	op.ColorScale.ScaleWithColor(c)
 	screen.DrawImage(r.text, op)
 }
 

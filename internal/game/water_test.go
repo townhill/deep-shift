@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/townhill/deep-shift/internal/replay"
+	"github.com/townhill/deep-shift/internal/sfx"
 	"github.com/townhill/deep-shift/internal/sim"
 )
 
@@ -144,5 +145,59 @@ func TestTooDeepPromptAndWaterEasing(t *testing.T) {
 		if f.Water[j] != float64(c.Water) {
 			t.Fatalf("cell %d displays %v after easing, snapshot has %d", j, f.Water[j], c.Water)
 		}
+	}
+}
+
+// Every kind of feedback the cave 04 run produces is voiced: digging,
+// collecting, the deep-water refusal, the valve and gates, the exit opening
+// and the completion.
+func TestSessionVoicesTheEventsOfAWholeRun(t *testing.T) {
+	fixture := loadFixture(t, "cave_04_complete.json")
+	s, err := NewSession(embeddedCave(t, "cave_04"), 30, 18)
+	if err != nil {
+		t.Fatal(err)
+	}
+	heard := map[sfx.Cue]int{}
+	drive(t, func(c Controls) {
+		s.Update(c)
+		for _, cue := range s.TakeCues() {
+			heard[cue]++
+		}
+	}, func() *Session { return s }, fixture, fixture.Ticks)
+	for _, want := range []sfx.Cue{sfx.CueDig, sfx.CueCollect, sfx.CueBlocked, sfx.CueValve, sfx.CueGate, sfx.CueExitOpen, sfx.CueComplete, sfx.CueLand} {
+		if heard[want] == 0 {
+			t.Errorf("never heard %s; heard %v", want, heard)
+		}
+	}
+	if heard[sfx.CueComplete] != 1 || heard[sfx.CueValve] != 1 {
+		t.Errorf("complete %d times, valve %d times; want once each", heard[sfx.CueComplete], heard[sfx.CueValve])
+	}
+	if heard[sfx.CueCrush] != 0 {
+		t.Error("heard a crush in a run without one")
+	}
+	if len(s.TakeCues()) != 0 {
+		t.Error("TakeCues did not forget the cues it returned")
+	}
+}
+
+func TestCrushIsVoicedAndPauseIsSilent(t *testing.T) {
+	fixture := loadFixture(t, "cave_02_crushed.json")
+	s, err := NewSession(embeddedCave(t, "cave_02"), 30, 18)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Update(Controls{Pause: true})
+	run(s, none, 60)
+	if cues := s.TakeCues(); len(cues) != 0 {
+		t.Fatalf("a paused session made sounds: %v", cues)
+	}
+	s.Update(Controls{Pause: true})
+	var crush bool
+	drive(t, func(c Controls) {
+		s.Update(c)
+		crush = crush || slices.Contains(s.TakeCues(), sfx.CueCrush)
+	}, func() *Session { return s }, fixture, fixture.Ticks)
+	if !crush {
+		t.Fatal("the crush was not voiced")
 	}
 }

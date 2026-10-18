@@ -81,12 +81,12 @@ func TestGoldenFixtures(t *testing.T) {
 	}
 }
 
-// SPEC §11 Phases 1 to 3: the same cave, seed and commands give identical
-// hashes across 100 separate runs, including a run that ends in a crush and
-// one that drains a reservoir. The trace hash makes this hold at every tick,
+// SPEC §11 Phases 1 to 4: the same cave, seed and commands give identical
+// hashes across 100 separate runs, including a run that ends in a crush, one
+// that drains a reservoir and one that pushes a boulder through water. The trace hash makes this hold at every tick,
 // so the water layout is identical throughout, not only at the end.
 func TestReplayIsDeterministicAcross100Runs(t *testing.T) {
-	for _, name := range []string{"test_cave_complete.json", "cave_02_crushed.json", "cave_03_complete.json", "cave_04_complete.json"} {
+	for _, name := range []string{"test_cave_complete.json", "cave_02_crushed.json", "cave_03_complete.json", "cave_04_complete.json", "cave_05_boulder_route.json"} {
 		t.Run(name, func(t *testing.T) {
 			r := loadFixture(t, name)
 			var first *Result

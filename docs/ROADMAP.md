@@ -122,9 +122,53 @@ Start with `go run ./cmd/deepshift -cave cave_04`, or press N on a pause or end 
 - [ ] The saved replay of a completed attempt reports "matches expect block" in `cavetool replay`
 - [ ] Feel: is the drain speed (10 steps/s) right? Is the one-unit slope of settled water readable?
 
-## Phase 4 — Playable native Mac vertical slice
+## Phase 4 — Playable native Mac vertical slice (delivered in the cloud; Mac playtest pending)
 
-Not started.
+Acceptance contract: SPEC §11 Phase 4. The decisions are D-033 to D-039. The owner asked for this phase
+to start before the Phase 2 and 3 Mac playtests
+([D-033](DECISIONS.md#d-033-phase-4-started-before-the-mac-playtests-of-phases-2-and-3-owner-decision)).
+No rule changed: rule version 3.
+
+- [x] Five authored campaign caves, SPEC §8's table in order: 01 First Descent, 02 Unstable Ground, 03 The
+  Roll, 04 Reservoir, 05 The Sluice; the Phase 1 test cave stays as an extra (Cloud)
+- [x] Every cave has a golden completion replay. Cave 01 cannot hurt the player, by design
+  ([D-035](DECISIONS.md#d-035-cave-01-first-descent)) (Cloud)
+- [x] Cave 05 has two distinct routes across its flooded channel, each with a replay. Tests show one
+  drains it and pushes nothing, and the other never turns the valve and crosses while it is still
+  flooded ([D-036](DECISIONS.md#d-036-cave-05-the-sluice-and-its-two-routes)) (Cloud)
+- [x] Title menu and cave list (tested headlessly); pause, restart, next cave and the cave list from the
+  pause, completion or death screens
+- [x] Sound: ten original synthesised cues for game events, with M to mute (cues tested as data; the app's
+  audio streams matched them in a headless capture)
+- [x] Fullscreen (F), resizable window, Cmd+Q; unsigned dev `.app` built and uploaded by CI
+- [x] Performance overlay to measure frame rate and timings on a Mac
+  ([D-039](DECISIONS.md#d-039-measuring-performance))
+- [ ] **Mac:** start, finish, fail and restart all five caves without developer tools (checklist below)
+- [ ] **Mac:** 60 FPS with smooth scrolling and movement on a reference Apple Silicon Mac, measured
+- [ ] **Mac:** launch the CI-built `.app` from Finder using the README's steps
+- [ ] **Mac:** usability, audio and graphics issues found in the playtest written up
+
+### Mac playtest checklist for the vertical slice
+
+Run `go run ./cmd/deepshift` with no flags, or open the CI-built `.app`. Record the build shown on the
+pause and menu screens, your macOS version and chip, and your display's refresh rate.
+
+- [ ] The title menu appears; arrows choose, Space/Enter select; "Play the campaign" starts cave 01
+- [ ] The cave list shows caves 1–5 and the Proving Ground extra; Esc goes back; a cave you finish shows
+  "(done)"
+- [ ] Choosing a cave with Enter never moves the player or turns a valve on arrival
+- [ ] In each cave: finish it; lose it where possible (cave 01 has no way to lose); restart with R; reach
+  the cave list with C
+- [ ] Cave 05, sluice: the valve in the floor at the bottom left drains the channel, which can then be
+  waded
+- [ ] Cave 05, boulder: drop the boulder over the channel's mouth into it, push it along, and follow it
+  through the water; you stay visible while wading
+- [ ] Sound: digging, crystals, landings, pushes, the valve and gates, refusals (sealed exit, deep water),
+  the exit opening, completion and crushing each have a cue that matches what happened. Nothing is
+  painfully loud, nothing clicks, and M mutes and unmutes
+- [ ] Press `` ` `` (or F3) and play for a minute in cave 04 or 05. Note FPS, TPS, and update and draw
+  avg/p95; toggling off prints them to the terminal. FPS should hold 60 in a window and fullscreen
+- [ ] On a 120 Hz display, movement and falling run at the same speed as at 60 Hz
 
 ## Follow-ups
 
@@ -138,10 +182,13 @@ Not started.
 | F-6 | `tools/vmcapture` plus an optional CI job using Ebitengine `exp/vmhost` | Repeatable headless frame captures ([D-014](DECISIONS.md#d-014-ebitengine-expvmhost-headless-capture-assessed-not-adopted)) |
 | F-7 | Intel / universal (`lipo`) build and test | macOS amd64 is "desired"; currently compile-only |
 | F-8 | Rebindable keys, reduced-effects mode, UI scaling | SPEC §4 accessibility; designed for but not built |
-| F-9 | Record simulation tick timing (avg/p95) on a reference Mac | SPEC §12 performance gate; CI records a Linux benchmark only |
+| F-9 | Record update and draw timing (avg/p95) on a reference Mac | SPEC §12 performance gate; the overlay measures it (D-039), and CI records a Linux benchmark only |
 | F-10 | Tune `GravityIntervalTicks`; confirm crystal crushes feel fair | Provisional values from D-018 and D-019; needs Mac playtest feedback |
-| F-11 | Sound cues for land, push and crush events | SPEC §2 and Phase 4; the events already exist |
+| F-11 | ~~Sound cues for land, push and crush events~~ | Done in Phase 4 (D-038) |
 | F-12 | Move `actions/upload-artifact` to a Node 24 release | CI warns that the v4 action targets Node 20 |
 | F-13 | Tune water: capacity, cadence, how far it spreads | Provisional values (D-027); needs the cave 04 Mac playtest |
-| F-14 | Sound cues for valves, gates and splashes | SPEC §2; the valve and gate events already exist |
+| F-14 | A splash cue when an object enters water | Valve and gate cues are done (D-038); a splash needs a new event, so a rule version |
 | F-15 | Slow the player in shallow water? | SPEC §6.3 allows it later; it must be a rule (same in replays), not a renderer effect |
+| F-16 | Save campaign progress and settings locally | Progress is per run only (D-037); SPEC §11 Phase 5 "local preferences" |
+| F-17 | Volume control beyond mute | SPEC §4 accessibility; M only toggles (D-038) |
+| F-18 | Reduce-motion option for the water easing and glides | SPEC §4 accessibility, with F-8 |
