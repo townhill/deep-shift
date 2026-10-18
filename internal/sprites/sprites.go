@@ -7,8 +7,9 @@
 // for earth, a faceted rhombus for crystals, a helmeted figure for the
 // player, a barred door versus an open, chevron-marked doorway for the exit
 // states, a round shaded rock for boulders, a riveted slab versus a raised
-// one for sluice gates, a wheel whose spokes turn 45 degrees for valves, and
-// wave lines that mark deep water. Pure Go (no Ebitengine), so it is
+// one for sluice gates, a wheel whose spokes turn 45 degrees for valves,
+// wave lines that mark deep water, and a many-legged crawler whose head and
+// feelers point the way it faces. Pure Go (no Ebitengine), so it is
 // unit-tested headlessly.
 package sprites
 
@@ -24,9 +25,10 @@ const Size = 32
 // Kind identifies a placeholder sprite.
 type Kind int
 
-// Sprite kinds. Terrain kinds are opaque; Crystal, Player and Boulder are
-// drawn over terrain and have transparent backgrounds; Waves is a
-// translucent pattern drawn over deep water.
+// Sprite kinds. Terrain kinds are opaque; Crystal, Player, Boulder and the
+// crawlers are drawn over terrain and have transparent backgrounds; Waves is
+// a translucent pattern drawn over deep water. The four crawler kinds are
+// one drawing rotated to face up, down, left and right.
 const (
 	Empty Kind = iota
 	Earth
@@ -41,12 +43,17 @@ const (
 	ValveShut
 	ValveOpen
 	Waves
+	CrawlerUp
+	CrawlerDown
+	CrawlerLeft
+	CrawlerRight
 	KindCount
 )
 
 func (k Kind) String() string {
 	return [...]string{"empty", "earth", "wall", "exit-sealed", "exit-open", "crystal", "player", "boulder",
-		"gate-closed", "gate-open", "valve-shut", "valve-open", "waves"}[k]
+		"gate-closed", "gate-open", "valve-shut", "valve-open", "waves",
+		"crawler-up", "crawler-down", "crawler-left", "crawler-right"}[k]
 }
 
 // Generate draws sprite k.
@@ -79,8 +86,34 @@ func Generate(k Kind) *image.RGBA {
 		drawValve(img, true)
 	case Waves:
 		drawWaves(img)
+	case CrawlerUp, CrawlerDown, CrawlerLeft, CrawlerRight:
+		up := image.NewRGBA(img.Bounds())
+		drawCrawler(up)
+		rotate(img, up, int(k-CrawlerUp))
 	}
 	return img
+}
+
+// rotate copies src into dst turned for facing f: 0 as drawn (up), 1 a half
+// turn (down), 2 a quarter turn anticlockwise (left), 3 a quarter turn
+// clockwise (right).
+func rotate(dst, src *image.RGBA, f int) {
+	const m = Size - 1
+	for y := range Size {
+		for x := range Size {
+			c := src.RGBAAt(x, y)
+			switch f {
+			case 0:
+				dst.SetRGBA(x, y, c)
+			case 1:
+				dst.SetRGBA(m-x, m-y, c)
+			case 2:
+				dst.SetRGBA(y, m-x, c)
+			case 3:
+				dst.SetRGBA(m-y, x, c)
+			}
+		}
+	}
 }
 
 // noise is a deterministic per-pixel hash in [0, 256).
@@ -389,6 +422,64 @@ func drawValve(img *image.RGBA, open bool) {
 	}
 	disc(img, 15, 15, 3, hub)
 	img.SetRGBA(14, 14, shade(hub, 70))
+}
+
+var (
+	shellColour = rgb(170, 70, 152)
+	legColour   = rgb(146, 62, 132)
+)
+
+// drawCrawler draws the crawler facing up, seen from above: a head with
+// glowing eyes and two feelers, a thorax and a segmented abdomen, and three
+// pairs of jointed legs, so its outline reads as a creature at a glance.
+func drawCrawler(img *image.RGBA) {
+	outline := shade(shellColour, -96)
+	// Legs first, so the body covers their roots: three pairs, each a thigh
+	// out to the side and a shin bent towards the tail.
+	for i, y := range []int{13, 18, 23} {
+		for _, side := range []int{-1, 1} {
+			kx := 15 + side*(9+i%2) // knee
+			for t := range 9 {
+				x := 15 + side*t
+				img.SetRGBA(x+min(side, 0)+1, y-t/3, legColour)
+				img.SetRGBA(x+min(side, 0)+1, y-t/3+1, legColour)
+			}
+			for t := range 5 {
+				img.SetRGBA(kx+side*(t/2)+min(side, 0)+1, y-2+t, shade(legColour, -36))
+			}
+		}
+	}
+	// Feelers: two curving lines ahead of the head.
+	for t := range 6 {
+		img.SetRGBA(13-t/2, 4-t/2+1, legColour)
+		img.SetRGBA(18+t/2, 4-t/2+1, legColour)
+	}
+	body := func(cx, cy, rx, ry float64) {
+		for y := range Size {
+			for x := range Size {
+				dx, dy := (float64(x)-cx)/rx, (float64(y)-cy)/ry
+				d := dx*dx + dy*dy
+				if d > 1 {
+					continue
+				}
+				c := shade(shellColour, int((-dx-dy)*26))
+				if d > 0.72 {
+					c = outline
+				}
+				img.SetRGBA(x, y, c)
+			}
+		}
+	}
+	body(15.5, 23, 7.5, 7)         // abdomen
+	body(15.5, 15, 6, 4.5)         // thorax
+	body(15.5, 8.5, 4.5, 4)        // head
+	for y := 19; y <= 28; y += 3 { // abdomen segments
+		rect(img, 11, y, 20, y, shade(shellColour, -50))
+	}
+	rect(img, 15, 17, 16, 29, shade(shellColour, -34)) // wing-case seam
+	eye := rgb(250, 238, 120)
+	rect(img, 12, 7, 13, 8, eye)
+	rect(img, 18, 7, 19, 8, eye)
 }
 
 // drawWaves draws translucent wave lines, the shape cue for deep water.

@@ -158,3 +158,24 @@ func TestPlayOrderListsEveryEmbeddedCaveOnce(t *testing.T) {
 		t.Fatal("IndexOf failed")
 	}
 }
+
+// A crystal collected while still gliding into its cell vanishes at once:
+// its glide must not keep drawing it under the player.
+func TestCrystalCollectedAsItLandsStopsGliding(t *testing.T) {
+	s, err := NewSession(tinyCave(t, "*#E", " @#"), 30, 18)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range UpdatesPerTick {
+		s.Update(Controls{}) // tick 0: the crystal falls beside the player
+	}
+	if len(s.Frame().Gliding) != 1 {
+		t.Fatalf("gliding %+v, want the falling crystal", s.Frame().Gliding)
+	}
+	for range UpdatesPerTick {
+		s.Update(Controls{Left: true}) // tick 1: the player takes it mid-glide
+	}
+	if s.Snapshot().Collected != 1 || len(s.Frame().Gliding) != 0 {
+		t.Fatalf("collected %d, gliding %+v", s.Snapshot().Collected, s.Frame().Gliding)
+	}
+}

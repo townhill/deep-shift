@@ -1,7 +1,8 @@
 // Command deepshift is the native desktop entrypoint: it opens one window on
 // the title menu, plays the embedded caves and renders them with Ebitengine.
-// No web view, no server. Each finished attempt (completed or crushed) is
-// saved as a replay under the user config directory, for bug reports.
+// No web view, no server. Each finished attempt (completed, crushed or
+// caught) is saved as a replay under the user config directory, for bug
+// reports.
 //
 // Ebitengine is initialised only here and in internal/render, so `go test`
 // never needs a display. GUI behaviour is compile-only in cloud CI and still
@@ -31,7 +32,7 @@ import (
 )
 
 func main() {
-	cave := flag.String("cave", "", "start at this embedded cave id (cave_01 to cave_05, or test_cave) or play this cave JSON file")
+	cave := flag.String("cave", "", "start at this embedded cave id (cave_01 to cave_05, crawler_warren or test_cave) or play this cave JSON file")
 	replayDir := flag.String("replay-dir", defaultReplayDir(), "directory for replays of finished attempts (empty: do not save)")
 	showVersion := flag.Bool("version", false, "print the build version and exit without opening a window")
 	noAudio := flag.Bool("no-audio", false, "do not open an audio device (for machines without sound output)")

@@ -73,6 +73,10 @@ func TestForEventsMapsDedupesAndOrders(t *testing.T) {
 		{"most important first", []sim.Event{ev(sim.EventDug), ev(sim.EventCollected), ev(sim.EventExitOpened), ev(sim.EventLanded), ev(sim.EventPlayerCrushed)},
 			[]Cue{CueCrush, CueExitOpen, CueCollect, CueLand, CueDig}},
 		{"push and complete", []sim.Event{ev(sim.EventBoulderPushed), ev(sim.EventCaveComplete)}, []Cue{CueComplete, CuePush}},
+		{"crawlers walking are quiet", []sim.Event{ev(sim.EventCrawlerMoved), ev(sim.EventCrawlerMoved)}, nil},
+		{"caught", []sim.Event{ev(sim.EventCrawlerMoved), ev(sim.EventPlayerCaught)}, []Cue{CueCaught}},
+		{"crushed and drowned crawlers, one sound", []sim.Event{ev(sim.EventCrawlerCrushed), ev(sim.EventFell), ev(sim.EventCrawlerDrowned)},
+			[]Cue{CueCrawlerGone}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -26,7 +26,7 @@ func TestTerrainIsOpaqueAndOverlaysAreCutOut(t *testing.T) {
 			}
 		}
 	}
-	for _, k := range []Kind{Crystal, Player, Boulder} {
+	for _, k := range []Kind{Crystal, Player, Boulder, CrawlerUp, CrawlerDown, CrawlerLeft, CrawlerRight} {
 		img := Generate(k)
 		if img.RGBAAt(0, 0).A != 0 || img.RGBAAt(Size-1, 0).A != 0 {
 			t.Errorf("%s corners are not transparent", k)
@@ -73,12 +73,47 @@ func TestSpritesDifferInShape(t *testing.T) {
 		}
 		return n
 	}
-	kinds := []Kind{Empty, Earth, Wall, ExitSealed, ExitOpen, Crystal, Player, Boulder, GateClosed, GateOpen, ValveShut, ValveOpen}
+	kinds := []Kind{Empty, Earth, Wall, ExitSealed, ExitOpen, Crystal, Player, Boulder, GateClosed, GateOpen, ValveShut, ValveOpen,
+		CrawlerUp, CrawlerDown, CrawlerLeft, CrawlerRight}
 	for i, a := range kinds {
 		for _, b := range kinds[i+1:] {
 			if n := differ(mask(a), mask(b)); n < 40 {
 				t.Errorf("%s and %s differ in only %d mask pixels", a, b, n)
 			}
 		}
+	}
+}
+
+// The crawler kinds are one drawing turned to face each way: its head and
+// feelers (the topmost rows facing up) end up on the side it faces.
+func TestCrawlersAreOneDrawingTurned(t *testing.T) {
+	up := Generate(CrawlerUp)
+	const m = Size - 1
+	turned := map[Kind]func(x, y int) (int, int){
+		CrawlerDown:  func(x, y int) (int, int) { return m - x, m - y },
+		CrawlerLeft:  func(x, y int) (int, int) { return y, m - x },
+		CrawlerRight: func(x, y int) (int, int) { return m - y, x },
+	}
+	for k, to := range turned {
+		img := Generate(k)
+		for y := range Size {
+			for x := range Size {
+				if tx, ty := to(x, y); img.RGBAAt(tx, ty) != up.RGBAAt(x, y) {
+					t.Fatalf("%s at (%d,%d) is not crawler-up's (%d,%d) turned", k, tx, ty, x, y)
+				}
+			}
+		}
+	}
+	// Facing up, the head is at the top: the top third has the eyes.
+	eyes := 0
+	for y := range Size / 3 {
+		for x := range Size {
+			if c := up.RGBAAt(x, y); c.R > 240 && c.G > 220 {
+				eyes++
+			}
+		}
+	}
+	if eyes == 0 {
+		t.Fatal("crawler-up has no eyes in its top third")
 	}
 }

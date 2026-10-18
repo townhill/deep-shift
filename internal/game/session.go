@@ -39,6 +39,20 @@ const SlideUpdates = 6
 // levels are eased over the same time.
 const ObjectSlideUpdates = sim.GravityIntervalTicks * UpdatesPerTick
 
+// CrawlerSlideUpdates is how long a crawler sprite glides between cells: one
+// crawler interval, so a patrolling crawler moves continuously.
+const CrawlerSlideUpdates = sim.CrawlerIntervalTicks * UpdatesPerTick
+
+// Death is how an attempt ended in death, for the overlay and the renderer.
+type Death int
+
+// Deaths.
+const (
+	DeathNone    Death = iota
+	DeathCrushed       // a falling boulder or crystal landed on the player
+	DeathCaught        // a crawler caught the player
+)
+
 // promptUpdates is how long transient HUD prompts stay visible.
 const promptUpdates = 2 * UpdatesPerSecond
 
@@ -88,8 +102,10 @@ type Session struct {
 
 	slideFrom, slideTo sim.Pos
 	slide              int
-	objects            map[int]objectSlide // gliding boulders and crystals by destination cell index
-	crushedBy          sim.Occupant
+	objects            map[int]objectSlide // gliding boulders, crystals and crawlers by destination cell index
+	death              Death
+	crushedBy          sim.Occupant // the object, for DeathCrushed
+	walkedIntoCrawler  bool         // for DeathCaught: the player's own move, not the crawler's
 	facing             sim.Dir
 	prompt             string
 	promptLeft         int
@@ -107,7 +123,9 @@ type objectSlide struct {
 	fromX, fromY float64 // visual start, tile units
 	to           sim.Pos
 	object       sim.Occupant
-	age          int // updates since the move
+	facing       sim.Dir // crawlers only
+	age          int     // updates since the move
+	dur          int     // updates the glide lasts
 }
 
 // NewSession starts a session on l with a view of viewW x viewH tiles.
@@ -120,6 +138,9 @@ func NewSession(l *level.Level, viewW, viewH int) (*Session, error) {
 	gs.resetAttempt()
 	gs.resetPresentation()
 	gs.setPrompt("Collect crystals to unseal the exit")
+	if l.Crawlers() > 0 {
+		gs.setPrompt("Crawlers keep the wall on their left: stay out of their way")
+	}
 	return gs, nil
 }
 
@@ -212,9 +233,25 @@ func (s *Session) tick() {
 			s.slideFrom, s.slideTo, s.slide = e.From, e.Pos, 0
 			s.facing = in.Move
 		case sim.EventFell, sim.EventRolled, sim.EventBoulderPushed:
-			s.startObjectSlide(e.From, e.Pos, e.Object)
+			s.startSlide(e.From, e.Pos, e.Object, sim.DirNone, ObjectSlideUpdates)
+		case sim.EventCrawlerMoved:
+			s.startSlide(e.From, e.Pos, sim.OccupantCrawler, s.snap.Cell(e.Pos).Facing, CrawlerSlideUpdates)
+		case sim.EventCollected:
+			delete(s.objects, s.index(e.Pos)) // a crystal taken as it lands
+		case sim.EventCrawlerCrushed, sim.EventCrawlerDrowned:
+			delete(s.objects, s.index(e.Pos))
+			if e.Kind == sim.EventCrawlerCrushed {
+				s.setPrompt(fmt.Sprintf("A falling %s crushed a crawler", e.Object))
+			} else {
+				s.setPrompt("The water drowned a crawler")
+			}
 		case sim.EventPlayerCrushed:
-			s.crushedBy = e.Object
+			s.death, s.crushedBy = DeathCrushed, e.Object
+		case sim.EventPlayerCaught:
+			// The player phase reports a walk into a crawler with the player
+			// still where they were; a crawler's catch can follow a move.
+			s.death = DeathCaught
+			s.walkedIntoCrawler = e.Pos == prev.Player && in.Move != sim.DirNone && e.Pos.Add(in.Move) == e.From
 		case sim.EventExitSealed:
 			need := s.sim.Required() - s.sim.Collected()
 			s.setPrompt(fmt.Sprintf("Exit sealed: collect %d more %s", need, plural(need, "crystal")))
@@ -261,20 +298,20 @@ func (s *Session) waterLevel(i int, target sim.Snapshot) float64 {
 	return s.waterFrom[i] + (float64(target.Cells[i].Water)-s.waterFrom[i])*t
 }
 
-// startObjectSlide begins a glide from the object's current visual position
-// (it may still be gliding into from) to its new cell.
-func (s *Session) startObjectSlide(from, to sim.Pos, object sim.Occupant) {
+// startSlide begins a glide of dur updates from the occupant's current
+// visual position (it may still be gliding into from) to its new cell.
+func (s *Session) startSlide(from, to sim.Pos, object sim.Occupant, facing sim.Dir, dur int) {
 	fi, ti := s.index(from), s.index(to)
 	fx, fy := float64(from.X), float64(from.Y)
 	if prev, ok := s.objects[fi]; ok {
 		fx, fy = prev.position()
 		delete(s.objects, fi)
 	}
-	s.objects[ti] = objectSlide{fromX: fx, fromY: fy, to: to, object: object}
+	s.objects[ti] = objectSlide{fromX: fx, fromY: fy, to: to, object: object, facing: facing, dur: dur}
 }
 
 func (b objectSlide) position() (x, y float64) {
-	t := float64(b.age) / ObjectSlideUpdates
+	t := float64(b.age) / float64(b.dur)
 	return b.fromX + (float64(b.to.X)-b.fromX)*t, b.fromY + (float64(b.to.Y)-b.fromY)*t
 }
 
@@ -285,7 +322,7 @@ func (s *Session) advancePresentation() {
 		s.slide++
 	}
 	for i, b := range s.objects {
-		if b.age++; b.age >= ObjectSlideUpdates {
+		if b.age++; b.age >= b.dur {
 			delete(s.objects, i)
 		} else {
 			s.objects[i] = b
@@ -327,7 +364,7 @@ func (s *Session) resetAttempt() {
 func (s *Session) resetPresentation() {
 	s.objects = map[int]objectSlide{}
 	s.cues = nil
-	s.crushedBy = sim.OccupantNone
+	s.death, s.crushedBy, s.walkedIntoCrawler = DeathNone, sim.OccupantNone, false
 	s.snap = s.sim.Snapshot()
 	s.slideFrom, s.slideTo, s.slide = s.snap.Player, s.snap.Player, SlideUpdates
 	s.facing = sim.DirNone
@@ -417,8 +454,11 @@ func (s *Session) FinishedReplay() (*replay.Replay, bool) {
 	}
 	s.finished = false
 	what := "completed the cave"
-	if s.sim.Status() == sim.StatusDead {
+	switch s.death {
+	case DeathCrushed:
 		what = "was crushed"
+	case DeathCaught:
+		what = "was caught by a crawler"
 	}
 	return s.Replay(fmt.Sprintf("Recorded in the app: the player %s on %q at tick %d.", what, s.level.ID, s.sim.Tick())), true
 }
@@ -462,6 +502,12 @@ func (s *Session) HUD() HUD {
 			fmt.Sprintf("%d %s in %s", s.snap.Collected, plural(s.snap.Collected, "crystal"), clock(s.snap.Tick)),
 			"R: play again   N: next cave   C: caves",
 		}
+	case s.snap.Status == sim.StatusDead && s.death == DeathCaught:
+		how := "A crawler caught you: they keep the wall on their left"
+		if s.walkedIntoCrawler {
+			how = "You walked into a crawler"
+		}
+		h.Overlay = []string{"CAUGHT", how, "R: try again   N: next cave   C: caves"}
 	case s.snap.Status == sim.StatusDead:
 		h.Overlay = []string{
 			"CRUSHED",
@@ -481,8 +527,9 @@ type Frame struct {
 	PlayerX, PlayerY float64 // interpolated, tile units
 	CameraX, CameraY float64 // top-left of the view, tile units
 	Facing           sim.Dir
-	// Gliding lists boulders and crystals still sliding into their cells, in
-	// cell order; draw these at X, Y instead of at Cell.
+	Death            Death // how the attempt ended, once the player is dead
+	// Gliding lists boulders, crystals and crawlers still sliding into their
+	// cells, in cell order; draw these at X, Y instead of at Cell.
 	Gliding []GlidingObject
 	// Water is the displayed water level of every cell, 0..sim.WaterCapacity,
 	// eased between ticks. Snapshot.Cells holds the exact levels. The slice
@@ -491,11 +538,12 @@ type Frame struct {
 	HUD   HUD
 }
 
-// GlidingObject is a boulder or crystal drawn between cells.
+// GlidingObject is a boulder, crystal or crawler drawn between cells.
 type GlidingObject struct {
 	Cell   sim.Pos
 	X, Y   float64 // tile units
 	Object sim.Occupant
+	Facing sim.Dir // crawlers only
 }
 
 // Frame returns the current view model.
@@ -504,7 +552,7 @@ func (s *Session) Frame() Frame {
 	var gliding []GlidingObject
 	for _, b := range s.objects {
 		x, y := b.position()
-		gliding = append(gliding, GlidingObject{Cell: b.to, X: x, Y: y, Object: b.object})
+		gliding = append(gliding, GlidingObject{Cell: b.to, X: x, Y: y, Object: b.object, Facing: b.facing})
 	}
 	slices.SortFunc(gliding, func(a, b GlidingObject) int {
 		return cmp.Or(cmp.Compare(a.Cell.Y, b.Cell.Y), cmp.Compare(a.Cell.X, b.Cell.X))
@@ -517,6 +565,7 @@ func (s *Session) Frame() Frame {
 		PlayerX:  px, PlayerY: py,
 		CameraX: s.camera.X, CameraY: s.camera.Y,
 		Facing:  s.facing,
+		Death:   s.death,
 		Gliding: gliding,
 		Water:   s.water,
 		HUD:     s.HUD(),
