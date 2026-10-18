@@ -16,6 +16,7 @@ import (
 
 	"github.com/townhill/deep-shift/internal/level"
 	"github.com/townhill/deep-shift/internal/replay"
+	"github.com/townhill/deep-shift/internal/sfx"
 	"github.com/townhill/deep-shift/internal/sim"
 )
 
@@ -98,6 +99,8 @@ type Session struct {
 	// ObjectSlideUpdates after each change; water is the Frame buffer.
 	waterFrom, water []float64
 	waterAge         int
+
+	cues []sfx.Cue // sounds due, until TakeCues
 }
 
 type objectSlide struct {
@@ -201,6 +204,7 @@ func (s *Session) tick() {
 	prev := s.snap
 	s.snap = s.sim.Snapshot()
 	s.easeWater(prev)
+	s.cues = append(s.cues, sfx.ForEvents(events)...)
 	gateNews := false
 	for _, e := range events {
 		switch e.Kind {
@@ -322,6 +326,7 @@ func (s *Session) resetAttempt() {
 
 func (s *Session) resetPresentation() {
 	s.objects = map[int]objectSlide{}
+	s.cues = nil
 	s.crushedBy = sim.OccupantNone
 	s.snap = s.sim.Snapshot()
 	s.slideFrom, s.slideTo, s.slide = s.snap.Player, s.snap.Player, SlideUpdates
@@ -354,6 +359,14 @@ func (s *Session) Ended() bool { return s.sim.Status() != sim.StatusPlaying }
 
 // Level returns the cave being played.
 func (s *Session) Level() *level.Level { return s.level }
+
+// TakeCues returns the sound cues due since the last call and forgets them.
+// Cues come only from simulated ticks, so a paused session makes no sound.
+func (s *Session) TakeCues() []sfx.Cue {
+	c := s.cues
+	s.cues = nil
+	return c
+}
 
 // Notify shows a transient HUD prompt, for messages from the platform layer.
 func (s *Session) Notify(msg string) { s.setPrompt(msg) }
@@ -419,7 +432,7 @@ type HUD struct {
 }
 
 // ControlsHint is shown when no prompt is active.
-const ControlsHint = "Arrows/WASD: move   Space: valve   Esc: pause   F: fullscreen"
+const ControlsHint = "Arrows/WASD: move   Space: valve   Esc: pause   F: fullscreen   M: sound"
 
 // HUD returns the current HUD text.
 func (s *Session) HUD() HUD {

@@ -21,6 +21,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 
 	"github.com/townhill/deep-shift/assets"
+	"github.com/townhill/deep-shift/internal/audio"
 	"github.com/townhill/deep-shift/internal/game"
 	"github.com/townhill/deep-shift/internal/level"
 	"github.com/townhill/deep-shift/internal/render"
@@ -31,6 +32,7 @@ func main() {
 	cave := flag.String("cave", "", "start at this embedded cave id (cave_01 to cave_05, or test_cave) or play this cave JSON file")
 	replayDir := flag.String("replay-dir", defaultReplayDir(), "directory for replays of finished attempts (empty: do not save)")
 	showVersion := flag.Bool("version", false, "print the build version and exit without opening a window")
+	noAudio := flag.Bool("no-audio", false, "do not open an audio device (for machines without sound output)")
 	flag.Parse()
 
 	build := buildVersion()
@@ -58,6 +60,9 @@ func main() {
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetTPS(game.UpdatesPerSecond)
 	a := &app{shell: shell, renderer: render.New(build), replayDir: *replayDir}
+	if !*noAudio {
+		a.sound = audio.New()
+	}
 	if err := ebiten.RunGame(a); err != nil {
 		log.Fatal(err)
 	}
@@ -107,6 +112,7 @@ func defaultReplayDir() string {
 type app struct {
 	shell     *game.Shell
 	renderer  *render.Renderer
+	sound     *audio.Player // nil with -no-audio: silent
 	replayDir string
 }
 
@@ -114,11 +120,26 @@ func (a *app) Update() error {
 	if inpututil.IsKeyJustPressed(ebiten.KeyF) {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	}
+	toggleSound := inpututil.IsKeyJustPressed(ebiten.KeyM)
+	if toggleSound {
+		a.sound.SetMuted(!a.sound.Muted())
+	}
 	a.shell.Update(readControls())
 	if a.shell.Screen() != game.ScreenPlaying {
 		return nil
 	}
 	s := a.shell.Playlist().Session()
+	switch {
+	case toggleSound && a.sound == nil:
+		s.Notify("No sound: started with -no-audio")
+	case toggleSound && a.sound.Muted():
+		s.Notify("Sound off (M: on)")
+	case toggleSound:
+		s.Notify("Sound on")
+	}
+	for _, cue := range s.TakeCues() {
+		a.sound.Play(cue)
+	}
 	if r, ok := s.FinishedReplay(); ok && a.replayDir != "" {
 		path, err := replay.Save(a.replayDir, r, time.Now())
 		if err != nil {
