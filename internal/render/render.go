@@ -84,22 +84,54 @@ func (r *Renderer) drawWorld(f game.Frame) {
 	camX := math.Round(f.CameraX * TileSize)
 	camY := math.Round(f.CameraY * TileSize)
 	x0, y0 := int(math.Floor(f.CameraX)), int(math.Floor(f.CameraY))
+	gliding := make(map[sim.Pos]bool, len(f.Gliding))
+	for _, g := range f.Gliding {
+		gliding[g.Cell] = true
+	}
 	op := &ebiten.DrawImageOptions{}
 	for y := max(y0, 0); y <= min(y0+ViewTilesH, snap.Height-1); y++ {
 		for x := max(x0, 0); x <= min(x0+ViewTilesW, snap.Width-1); x++ {
-			cell := snap.Cell(sim.Pos{X: x, Y: y})
+			p := sim.Pos{X: x, Y: y}
+			cell := snap.Cell(p)
 			op.GeoM.Reset()
 			op.GeoM.Translate(float64(x*TileSize)-camX, float64(y*TileSize)-camY)
 			r.world.DrawImage(r.tiles[terrainSprite(cell.Terrain, snap.ExitOpen)], op)
-			if cell.Occupant == sim.OccupantCrystal {
-				r.world.DrawImage(r.tiles[sprites.Crystal], op)
+			if k, ok := objectSprite(cell.Occupant); ok && !gliding[p] {
+				r.world.DrawImage(r.tiles[k], op)
 			}
 		}
 	}
-	// The player is drawn at its interpolated position, not its cell.
+	// Moving objects and the player are drawn after all terrain, at their
+	// interpolated positions, so the next row's tiles never cover them.
+	for _, g := range f.Gliding {
+		k, ok := objectSprite(g.Object)
+		if !ok {
+			continue
+		}
+		op.GeoM.Reset()
+		op.GeoM.Translate(math.Round(g.X*TileSize-camX), math.Round(g.Y*TileSize-camY))
+		r.world.DrawImage(r.tiles[k], op)
+	}
 	op.GeoM.Reset()
+	if snap.Status == sim.StatusDead {
+		// Crushed: squashed to the bottom of the cell and tinted red.
+		op.GeoM.Scale(1, 0.45)
+		op.GeoM.Translate(0, TileSize*0.55)
+		op.ColorScale.Scale(1, 0.45, 0.45, 1)
+	}
 	op.GeoM.Translate(math.Round(f.PlayerX*TileSize-camX), math.Round(f.PlayerY*TileSize-camY))
 	r.world.DrawImage(r.tiles[sprites.Player], op)
+}
+
+// objectSprite returns the sprite for a boulder or crystal occupant.
+func objectSprite(o sim.Occupant) (sprites.Kind, bool) {
+	switch o {
+	case sim.OccupantCrystal:
+		return sprites.Crystal, true
+	case sim.OccupantBoulder:
+		return sprites.Boulder, true
+	}
+	return 0, false
 }
 
 func terrainSprite(t sim.Terrain, exitOpen bool) sprites.Kind {

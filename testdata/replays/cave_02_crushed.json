@@ -1,0 +1,26 @@
+{
+  "format_version": 1,
+  "description": "Death replay for cave_02 (Unstable Ground). Takes the crystal from under the first boulder (tick 24), then moves straight down instead of aside. The boulder falls into the vacated cell (tick 28) and, now falling, crushes the player on the next gravity step (tick 30). Status dead; the cave freezes at tick 31.",
+  "cave_id": "cave_02",
+  "cave_checksum": "43961edf0caf8abf3a19c77c356da59703cf54871a3f08d5b5d8bda0e23ccbda",
+  "seed": 20261018,
+  "rule_version": 2,
+  "ticks": 62,
+  "commands": [
+    {"tick":0,"action":"down"},
+    {"tick":4,"action":"down"},
+    {"tick":8,"action":"right"},
+    {"tick":12,"action":"right"},
+    {"tick":16,"action":"right"},
+    {"tick":20,"action":"right"},
+    {"tick":24,"action":"right"},
+    {"tick":28,"action":"down"}
+  ],
+  "expect": {
+    "final_tick": 31,
+    "status": "dead",
+    "collected": 1,
+    "final_hash": "e6a20341d45bf5a66c4a53af8ecc8c5042881ca532489b5e518454c3154056b2",
+    "trace_hash": "4109af685e154dc7342441a39d55feb50c4e2d491762de5d304ad7d15fc9f906"
+  }
+}

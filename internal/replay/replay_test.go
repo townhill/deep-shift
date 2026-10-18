@@ -2,6 +2,7 @@ package replay
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -32,11 +33,17 @@ func loadFixture(t *testing.T, name string) *Replay {
 
 // freshTestCave parses the embedded cave from bytes each time, so repeated
 // runs share no state at all.
-func freshTestCave(t *testing.T) *level.Level {
+func freshTestCave(t *testing.T) *level.Level { return freshCave(t, "test_cave") }
+
+func freshCave(t *testing.T, id string) *level.Level {
 	t.Helper()
-	l, err := level.Load(assets.Levels, assets.TestCave)
+	levels, err := level.LoadDir(assets.Levels, assets.LevelDir)
 	if err != nil {
 		t.Fatal(err)
+	}
+	l, ok := level.ByID(levels, id)
+	if !ok {
+		t.Fatalf("no embedded cave %q", id)
 	}
 	return l
 }
@@ -74,27 +81,77 @@ func TestGoldenFixtures(t *testing.T) {
 	}
 }
 
-// SPEC §11 Phase 1: the same cave, seed and commands give identical hashes
-// across 100 separate runs. The trace hash makes this hold at every tick.
+// SPEC §11 Phases 1 and 2: the same cave, seed and commands give identical
+// hashes across 100 separate runs, including a run that ends in a crush. The
+// trace hash makes this hold at every tick.
 func TestReplayIsDeterministicAcross100Runs(t *testing.T) {
-	r := loadFixture(t, "test_cave_complete.json")
-	var first *Result
-	for run := range 100 {
-		res, err := Run(r, freshTestCave(t))
-		if err != nil {
-			t.Fatal(err)
+	for _, name := range []string{"test_cave_complete.json", "cave_02_crushed.json", "cave_03_complete.json"} {
+		t.Run(name, func(t *testing.T) {
+			r := loadFixture(t, name)
+			var first *Result
+			for run := range 100 {
+				res, err := Run(r, freshCave(t, r.CaveID))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if first == nil {
+					first = res
+					continue
+				}
+				if res.FinalHash != first.FinalHash || res.TraceHash != first.TraceHash {
+					t.Fatalf("run %d diverged: final %s trace %s, run 0 had final %s trace %s",
+						run, res.FinalHash, res.TraceHash, first.FinalHash, first.TraceHash)
+				}
+			}
+			if err := r.Check(first); err != nil {
+				t.Fatalf("100 runs agreed but not with the golden expectation: %v", err)
+			}
+		})
+	}
+}
+
+// SPEC §11 Phase 2: a falling rock kills the player and ends the cave, and
+// that death is reproducible from a replay.
+func TestCrushFixtureEndsInDeath(t *testing.T) {
+	r := loadFixture(t, "cave_02_crushed.json")
+	var crushes []sim.Event
+	res, err := RunObserved(r, freshCave(t, r.CaveID), func(_ uint64, events []sim.Event, _ *sim.Sim) {
+		for _, e := range events {
+			if e.Kind == sim.EventPlayerCrushed {
+				crushes = append(crushes, e)
+			}
 		}
-		if first == nil {
-			first = res
-			continue
-		}
-		if res.FinalHash != first.FinalHash || res.TraceHash != first.TraceHash {
-			t.Fatalf("run %d diverged: final %s trace %s, run 0 had final %s trace %s",
-				run, res.FinalHash, res.TraceHash, first.FinalHash, first.TraceHash)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != sim.StatusDead || len(crushes) != 1 || res.FinalTick != crushes[0].Tick+1 {
+		t.Fatalf("status %s, crushes %v, final tick %d", res.Status, crushes, res.FinalTick)
+	}
+	if res.Sim.Player() != crushes[0].Pos {
+		t.Fatalf("player at %s, crushed at %s", res.Sim.Player(), crushes[0].Pos)
+	}
+}
+
+// Every embedded cave must be demonstrably completable: some golden fixture
+// finishes it.
+func TestEveryEmbeddedCaveHasACompletionFixture(t *testing.T) {
+	levels, err := level.LoadDir(assets.Levels, assets.LevelDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names, _ := filepath.Glob(filepath.Join(fixtureDir, "*.json"))
+	completed := map[string]bool{}
+	for _, path := range names {
+		r := loadFixture(t, filepath.Base(path))
+		if r.Expect != nil && r.Expect.Status == sim.StatusComplete.String() {
+			completed[r.CaveID] = true
 		}
 	}
-	if err := r.Check(first); err != nil {
-		t.Fatalf("100 runs agreed but not with the golden expectation: %v", err)
+	for _, l := range levels {
+		if !completed[l.ID] {
+			t.Errorf("cave %q has no fixture that completes it", l.ID)
+		}
 	}
 }
 
@@ -133,7 +190,10 @@ func TestRunRejectsMismatchedContext(t *testing.T) {
 	}{
 		{"other cave", func(r *Replay) { r.CaveID = "other" }, `replay is for cave "other"`},
 		{"cave edited", func(r *Replay) { r.CaveChecksum = strings.Repeat("0", 64) }, "has changed since the replay was recorded"},
-		{"future rules", func(r *Replay) { r.RuleVersion = sim.RuleVersion + 1 }, "rule version 2; this build implements rule version 1"},
+		{"future rules", func(r *Replay) { r.RuleVersion = sim.RuleVersion + 1 },
+			fmt.Sprintf("rule version %d; this build implements rule version %d", sim.RuleVersion+1, sim.RuleVersion)},
+		{"older rules", func(r *Replay) { r.RuleVersion = 1 },
+			fmt.Sprintf("rule version 1; this build implements rule version %d", sim.RuleVersion)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

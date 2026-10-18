@@ -10,16 +10,17 @@ const (
 	SymbolWall     = '#'
 	SymbolCrystal  = '*'
 	SymbolPlayer   = '@'
+	SymbolBoulder  = 'O' // boulder; level files need format_version 2 or later
 	SymbolExit     = 'E' // exit, sealed (and the only exit symbol in files)
 	SymbolExitOpen = 'X' // exit, open; dumps only, not accepted in files
 )
 
 // SymbolLegend describes the symbols accepted in level rows, for error
 // messages and documentation.
-const SymbolLegend = `'#' wall, '.' earth, ' ' empty, '*' crystal, '@' player start, 'E' exit`
+const SymbolLegend = `'#' wall, '.' earth, ' ' empty, '*' crystal, '@' player start, 'E' exit, 'O' boulder`
 
-// CellForSymbol maps a level-file symbol to its initial cell. Crystals and the
-// player start on empty terrain.
+// CellForSymbol maps a level-file symbol to its initial cell. Crystals,
+// boulders and the player start on empty terrain; boulders start at rest.
 func CellForSymbol(r rune) (Cell, bool) {
 	switch r {
 	case SymbolEmpty:
@@ -34,6 +35,8 @@ func CellForSymbol(r rune) (Cell, bool) {
 		return Cell{Terrain: TerrainEmpty, Occupant: OccupantPlayer}, true
 	case SymbolExit:
 		return Cell{Terrain: TerrainExit}, true
+	case SymbolBoulder:
+		return Cell{Terrain: TerrainEmpty, Occupant: OccupantBoulder}, true
 	}
 	return Cell{}, false
 }
@@ -46,6 +49,8 @@ func Symbol(c Cell, exitOpen bool) rune {
 		return SymbolPlayer
 	case OccupantCrystal:
 		return SymbolCrystal
+	case OccupantBoulder:
+		return SymbolBoulder
 	}
 	switch c.Terrain {
 	case TerrainEmpty:

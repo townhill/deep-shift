@@ -1,118 +1,176 @@
-# Deep Shift rules reference — rule version 1
+# Deep Shift rules reference — rule version 2
 
-This file describes the rules **as implemented** in `internal/sim` (`sim.RuleVersion = 1`). The code and its
-tests are authoritative; keep this file in step with them. Boulders, water, gates and creatures are **not**
-in rule version 1. Phase 2 (boulders) will add to this file and bump the rule version.
+This file describes the rules **as implemented** in `internal/sim` (`sim.RuleVersion = 2`). The code and its
+tests are authoritative; keep this file in step with them.
+
+- **Rule version 1** covered movement, digging, crystals and the quota-sealed exit.
+- **Rule version 2** adds **gravity** for boulders and crystals (falling, rolling and crushing), and
+  pushing for boulders.
+
+Under rule version 2, crystals with nothing under them fall, so caves with loose crystals play differently
+than under rule version 1. Water, gates and creatures are not implemented yet.
 
 ## Grid and coordinates
 
 - The cave is a rectangle of `width × height` cells (each side 1..256). Cell `(x, y)` has origin at the
-  top-left. `y` grows downward, which will be the direction of gravity.
+  top-left, and `y` grows downward, the direction of gravity.
 - Each cell has a **terrain** and at most one **occupant**:
 
 | Terrain | Symbol | Passable? | Notes |
 |---|---|---|---|
 | empty | ` ` (space) | yes | open floor |
 | earth | `.` | yes, by digging | becomes empty when the player enters |
-| wall | `#` | never | permanent in v1 |
+| wall | `#` | never | permanent |
 | exit | `E` (sealed) / `X` (open, dumps only) | only when open | entering it while open completes the cave |
 
-| Occupant | Symbol | Notes |
-|---|---|---|
-| player | `@` | exactly one; starts on empty terrain |
-| crystal | `*` | collected when the player enters its cell |
+| Occupant | Symbol | Rounded? | Notes |
+|---|---|---|---|
+| player | `@` | no | exactly one; starts on empty terrain |
+| crystal | `*` | yes | falls and rolls like a boulder; collected when the player enters its cell, even while it is falling; never pushed |
+| boulder | `O` | yes | always on empty terrain; can be pushed; needs cave `format_version` 2 |
 
-- Anything outside the cave behaves as a wall.
+- Boulders and crystals are the **falling objects**. Their cell also carries a **falling** flag. It is set
+  when the object moved (fell or rolled) on the most recent gravity step, and cleared when it comes to rest
+  or is collected. Cave files always start objects at rest.
+- Only objects on open floor are subject to gravity. Level files cannot place an object inside earth.
+- Anything outside the cave behaves as a wall. "Empty" below means open floor with no occupant.
 
 ## Tick model
 
-- One `Step` is exactly one logical tick. The simulation rate is **20 ticks per second** (provisional). The
-  app runs 3 display updates per tick; see [DECISIONS D-003](DECISIONS.md#d-003-fixed-step-scheduling-provisional-rates).
-- Inputs are per tick. At most one move direction (`up`, `down`, `left`, `right`) applies to a tick.
+- One `Step` is exactly one logical tick. The simulation runs at **20 ticks per second** (provisional). The
+  app runs 3 display updates per tick ([D-003](DECISIONS.md#d-003-fixed-step-scheduling-provisional-rates)).
+- Inputs are per tick. At most one move direction applies to a tick.
 - **Update order within a tick:**
   1. **Player phase.** If the move cooldown is above zero, decrement it and ignore any move. Otherwise
-     resolve at most one move (below).
-  2. **World phase.** If the exit is sealed and `collected ≥ required_crystals`, open it and emit
-     `exit-opened` for the exit cell.
-  3. The tick counter increments.
-- After the cave is complete, `Step` changes nothing and the tick counter stops.
+     resolve at most one move, which may push a boulder (below). Entering the open exit ends the cave
+     immediately, and the rest of the tick is skipped.
+  2. **Gravity phase**, only on ticks that are multiples of `GravityIntervalTicks = 2` (provisional, so
+     objects move 10 cells/s). Boulders and crystals are scanned **bottom row to top row, and left to right
+     within a row**. Each object updates at most once per tick: a cell an object moved into this step is
+     skipped if the scan reaches it again, and a boulder pushed this tick sits out the step.
+  3. **Quota.** If the exit is sealed and `collected ≥ required_crystals`, it opens and emits
+     `exit-opened`. This is skipped if the player died this tick.
+  4. The tick counter increments.
+- Once the cave is complete **or the player is dead**, `Step` changes nothing and the tick counter stops.
 
-## Movement
+## Player movement
 
 | Destination | Result | Events (in order) | Cooldown |
 |---|---|---|---|
-| outside the cave | blocked | — | not started |
-| wall | blocked | — | not started |
+| outside the cave, or a wall | blocked | — | not started |
 | sealed exit | blocked | `exit-sealed` | not started |
 | empty | move | `moved` | started |
-| earth | dig the cell (earth → empty), move | `moved`, `dug` | started |
-| crystal | collect (+1, crystal removed), move | `moved`, `collected` | started |
-| open exit | move, cave complete | `moved`, `cave-complete` | started |
+| earth | dig it (earth → empty), move | `moved`, `dug` | started |
+| crystal (resting or falling) | collect it (+1, crystal removed), move | `moved`, `collected` | started |
+| boulder, pushable (below) | push it one cell, move into its cell | `moved`, `boulder-pushed` | started |
+| boulder, not pushable | blocked | — | not started |
+| open exit | move; the cave is complete | `moved`, `cave-complete` | started |
 
-- **Cadence:** a successful move sets the cooldown to `MoveIntervalTicks − 1 = 3`, so a held direction
-  moves on ticks `t, t+4, t+8, …` (5 tiles/s).
-- A blocked move does not start the cooldown, so another direction can be tried on the very next tick.
-- A move given during the cooldown is dropped, not queued. The game session separately latches one key
-  press until the window opens (see [D-004](DECISIONS.md#d-004-movement-cadence-and-input-model-provisional)).
-- A crystal is counted exactly once: its cell becomes empty when collected.
-- The quota check runs after the player phase. On the tick the last required crystal is collected, the
-  events are `moved`, `collected`, `exit-opened`, and the earliest the player can enter the exit is the
-  next movement window.
-- `required_crystals = 0` means the exit is open before tick 0 (no `exit-opened` event).
+- **Cadence:** a successful move sets the cooldown to `MoveIntervalTicks − 1 = 3`, so a held direction moves
+  on ticks `t, t+4, t+8, …` (5 tiles/s). A blocked move does not start the cooldown. A move given during the
+  cooldown is dropped, not queued.
+- **Pushing:** only **left or right**, only a **resting** boulder (not falling), and only into **empty
+  floor**. There are no chains: a second boulder, earth, a wall, a crystal, the exit or the cave edge beyond
+  the boulder blocks the push. Pushes always succeed when allowed; there is no random resistance.
+- The player is not affected by gravity and may stand over an empty pit.
+
+## Gravity (boulders and crystals)
+
+For each falling object, in scan order, the first matching rule applies. Events name the object (`boulder`
+or `crystal`).
+
+| Situation | Result | Event | Falling afterwards |
+|---|---|---|---|
+| cell below is empty | fall one cell | `fell` (from → to) | yes |
+| player below, object **falling** | the player is crushed; the object stops on them; status `dead` | `player-crushed` (object → player) | no |
+| below is rounded (boulder or crystal), the **left** cell and the cell below it are both empty | roll one cell left | `rolled` | yes |
+| as above but left is blocked, **right** cell and the cell below it both empty | roll one cell right | `rolled` | yes |
+| anything else (earth, wall, exit, cave floor, a resting object on the player, blocked rolls) | stay | `landed` if it was falling | no |
+
+- **Never teleports:** a fall moves exactly one cell down. A roll moves one cell sideways, and the object
+  drops into the diagonal on the *next* gravity step.
+- **Resting vs falling:** a resting object above the player is held up by the player and never crushes
+  them. When the player steps out from under it, the object falls into the vacated cell and is then
+  falling. So **step aside, never straight down**: moving down from under a boulder or crystal means it
+  lands on you on the next gravity step, because you can't move again for 4 ticks.
+- **Catching a crystal:** walking into a crystal's cell collects it even while it is falling. Standing
+  *under* a falling crystal crushes you, like a boulder.
+- Objects never enter earth, walls or the exit, and never destroy each other; they rest on or roll off.
+- Stacks fall together: the bottom-up scan frees each cell before the object above is considered.
 
 ## Examples
 
-Grids are shown between `|` bars so empty cells are visible. This is the scenario of
-`TestExitCannotCompleteBeforeQuota` (quota 2). Ticks not listed are cooldown ticks or have no input.
+Grids are shown between `|` bars so that empty cells are visible.
+
+**Falling** (`TestBoulderFallsOneCellPerGravityStep`): one cell per gravity tick, landing on the wall.
+Each column is the state after the labelled tick.
 
 ```text
-tick  input  grid   result
- 0    right  |*@E|  blocked by the sealed exit: exit-sealed; cooldown not started
-             |*  |
- 1    left   |@ E|  moved, collected (1/2)
-             |*  |
- 5    down   |  X|  moved, collected (2/2), exit-opened (X = open exit)
-             |@  |
- 9    right  |  X|  moved
-             | @ |
-13    up     | @X|  moved
-             |   |
-17    right  |  @|  moved, cave-complete; later Steps change nothing
-             |   |
+start   tick 0  tick 2  tick 4  tick 6
+|O@|    | @|    | @|    | @|    | @|
+|  |    |O |    |  |    |  |    |  |
+|  |    |  |    |O |    |  |    |  |
+|  |    |  |    |  |    |O |    |O |  landed
+|##|    |##|    |##|    |##|    |##|
 ```
 
-Digging changes exactly one tile, the one the player enters:
+**Rolling, left before right** (`TestRollingCriteriaAndTieBreak`, `TestRolledBoulderFallsNextStep`):
 
 ```text
-tick  input  before  after
- 0    right  |@..|   | @.|   moved, dug
+tick 0: rolled left       tick 2: fell
+|  O  @|  -> | O   @|  ->  |     @|
+|  O   |     |  O   |      | OO   |
+|  #   |     |  #   |      |  #   |
 ```
+
+**Crushed by running down** (fixture `cave_02_crushed.json`): the player takes the crystal from under a
+boulder at tick 24, moves down at tick 28, and the boulder falls into the cell they left. At tick 30 it
+is falling and lands on them.
+
+```text
+tick 24 (collect)   tick 28 (move down)   tick 30
+|O|                 | |                   | |
+|@|                 |O|  fell             |O|  player-crushed: status dead
+|.|                 |@|                   |@|
+```
+
+**Push into a pit** (fixture `cave_03_complete.json`): at tick 140 the push moves the boulder into the
+cell over the pit. It sits out that tick's gravity, falls from tick 142, and the player walks over the
+pit behind it.
 
 ## Determinism contract
 
-- The full outcome is a function of **(cave, seed, rule version, per-tick inputs)**.
-- Cells are processed in row-major index order. No Go map iteration, wall-clock time, file I/O or global
-  state affects the rules. `internal/sim` imports only `crypto/sha256`, `encoding/binary`, `encoding/hex`,
-  `errors`, `fmt` and `strings` (enforced by `TestImportsArePure`, and by a `go list -deps` check in CI).
-- Randomness: SplitMix64 seeded with the cave seed. Its state is hashed. Rule version 1 never draws from it.
-- **State hash** (`sim.StateHash`): SHA-256 of a fixed little-endian layout starting with
-  `deep-shift/state-hash/v1\0`, then: rule version (u32), seed (u64), tick (u64), width, height,
-  required, collected, player x, player y (u32 each), exit-open, status and cooldown (u8 each), PRNG
-  state (u64), then each cell's terrain and occupant (u8 each) in row-major order.
-- **Trace hash** (replays): SHA-256 over the tick-0 state hash followed by the state hash after each tick.
+- The outcome depends only on **(cave, seed, rule version, per-tick inputs)**.
+- Cells are processed in a documented order (row-major for the player and quota, bottom-to-top /
+  left-to-right for gravity). No Go map iteration, wall-clock time, file I/O or global state affects the
+  rules. `internal/sim` imports only `crypto/sha256`, `encoding/binary`, `encoding/hex`, `errors`, `fmt`
+  and `strings`; `TestImportsArePure` and a `go list -deps` check in CI enforce this.
+- **Randomness:** SplitMix64 seeded with the cave seed. Its state is hashed. Rule version 2 does not draw
+  from it.
+- **Test-cave example:** in `test_cave` two crystals sit in open pockets, so they drop one cell at tick 0
+  (`(9,21)->(9,22)` and `(25,5)->(25,6)`, visible with `cavetool replay -trace`).
+- **State hash** (`sim.StateHash`, layout v2): SHA-256 of a fixed little-endian layout starting with
+  `deep-shift/state-hash/v2\0`. It then covers rule version (u32), seed (u64), tick (u64), width, height,
+  required, collected, player x and player y (u32 each), exit-open, status and cooldown (u8 each), and the
+  PRNG state (u64). Finally it covers each cell's terrain, occupant and falling flag (u8 each), in
+  row-major order.
+- **Trace hash** (replays): SHA-256 over the tick-0 state hash, then the state hash after each tick that
+  advanced the simulation. Frozen ticks after completion or death add nothing.
 
 ## Verification
 
 | Rule | Tests |
 |---|---|
-| Movement in all directions; blocked moves change nothing | `TestMoveIntoEmptyCell`, `TestBlockedMoves` |
-| Bounds and corners | `TestBlockedMoves` (edge and corner cases) |
-| Digging removes exactly one earth tile | `TestDiggingRemovesExactlyOneEarthTile`, `TestDugTunnelIsWalkableWithoutDiggingAgain` |
-| Collecting increments exactly once | `TestCollectingCrystalIncrementsOnce` |
-| Cadence and dropped cooldown input | `TestMovementCadence`, `TestMoveInputDuringCooldownIsIgnored`, `TestBlockedMoveLeavesWindowOpenForAnotherDirection` |
-| Exit sealed until quota; completes after | `TestExitCannotCompleteBeforeQuota`, `TestQuotaBelowTotalOpensEarly`, `TestZeroQuotaExitStartsOpen`, `test_cave_sealed_exit.json` |
-| Completion freezes state | `TestCompletedCaveIsFrozen` |
-| Restart restores everything, including the seed | `TestResetRestoresAllState`, `TestRestartOnlyFromPauseOrCompletion` |
-| Invariants under random input (20 seeds × 3000 ticks) | `TestRandomisedRunsKeepInvariantsAndDeterminism` |
-| 100 identical runs → identical final and trace hashes | `TestReplayIsDeterministicAcross100Runs` |
+| Movement, bounds, walls, digging, collecting, cadence, exit quota | `internal/sim/sim_test.go` (rule-1 tests, unchanged and passing under rule 2; their crystals are all supported) |
+| Falls one cell per gravity tick, never skipping | `TestBoulderFallsOneCellPerGravityStep`, `TestStackFallsTogetherOneCellEach`, `TestCrystalFallsLikeABoulder` |
+| Crystals roll, crush and can be caught | `TestCrystalRollsOffRoundedObjects`, `TestFallingCrystalCrushesThePlayer`, `TestWalkingIntoAFallingCrystalCollectsIt`, `TestObjectEmbeddedInEarthDoesNotFall` |
+| Supported boulders stay at rest | `TestSupportedBoulderStaysAtRest` (earth, wall, floor, exit, player, flat blockers, blocked diagonals) |
+| Rolling criteria and left-first tie-break | `TestRollingCriteriaAndTieBreak`, `TestRolledBoulderFallsNextStep` |
+| At most one update per boulder per tick | `TestBoulderUpdatesAtMostOncePerStep` (mutation-checked: fails without the marker), `TestPushedBoulderFallsOnTheNextGravityStep`, per-tick event checks in the randomised runs |
+| Push: horizontal, resting, single, into empty | `TestPushRules`, `TestFallingBoulderCannotBePushed` |
+| Crushing, death freeze, reset after death | `TestCrushing`, `TestDeathFreezesAndResetRestores`, `TestEnteringTheExitEndsTheTickBeforeGravity` |
+| Invariants under random input with boulders and falling crystals (20 seeds × 3000 ticks) | `TestRandomisedRunsKeepInvariantsAndDeterminism` |
+| 100 identical runs, including a death | `TestReplayIsDeterministicAcross100Runs` |
+| Death ends the attempt and is logged as a reproducible replay | `TestCrushFixtureEndsInDeath`, `TestCrushEndsAttemptAndLogsReproducibleReplay` |
+| Every cave is completable | `TestEveryEmbeddedCaveHasACompletionFixture` |
 | Hash layout pinned | `TestStateHashGolden`, golden replay fixtures |

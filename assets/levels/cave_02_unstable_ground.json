@@ -1,0 +1,30 @@
+{
+  "format_version": 2,
+  "id": "cave_02",
+  "title": "Unstable Ground",
+  "width": 30,
+  "height": 14,
+  "seed": 20261018,
+  "required_crystals": 6,
+  "rows": [
+    "##############################",
+    "#@  .....................O...#",
+    "#   ..O...#OOOO#......... ...#",
+    "#.....*.....*.*.......... *..#",
+    "#............................#",
+    "#....................#.#.....#",
+    "#######..........*...#O#.....#",
+    "#....................#O#.....#",
+    "#........########.....*#.....#",
+    "#..*.................#.#######",
+    "#............................#",
+    "#.......*..................E.#",
+    "#............................#",
+    "##############################"
+  ],
+  "metadata": {
+    "author": "Deep Shift project (original layout)",
+    "difficulty": "tutorial",
+    "purpose": "Falling boulders: take a crystal from under a boulder and step aside, tunnel under a row that collapses behind you, empty a shaft from the side. Moving straight down from under a boulder is fatal."
+  }
+}

@@ -38,7 +38,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/townhill/deep-shift/internal/level"
 	"github.com/townhill/deep-shift/internal/sim"
@@ -86,8 +89,11 @@ type Result struct {
 	Collected int
 	FinalHash sim.Hash
 	// TraceHash is SHA-256 over the state hash at tick 0 followed by the
-	// state hash after every simulated tick, so two runs with equal trace
-	// hashes agreed at every tick, not just at the end.
+	// state hash after every tick that advanced the simulation, so two runs
+	// with equal trace hashes agreed at every tick, not just at the end.
+	// Ticks after the cave is complete or the player is dead leave the
+	// state frozen and add nothing, so idling after the end does not change
+	// the trace.
 	TraceHash sim.Hash
 	Sim       *sim.Sim // final state, for inspection
 }
@@ -146,7 +152,12 @@ func (r *Replay) Validate() error {
 
 // Run simulates r against l, which must be the cave the replay was
 // recorded on.
-func Run(r *Replay, l *level.Level) (*Result, error) {
+func Run(r *Replay, l *level.Level) (*Result, error) { return RunObserved(r, l, nil) }
+
+// RunObserved is Run with an optional observer called after every simulated
+// tick with that tick's number, its events and the simulation. The observer
+// must not mutate the simulation.
+func RunObserved(r *Replay, l *level.Level, observe func(tick uint64, events []sim.Event, s *sim.Sim)) (*Result, error) {
 	if err := r.Validate(); err != nil {
 		return nil, err
 	}
@@ -174,9 +185,15 @@ func Run(r *Replay, l *level.Level) (*Result, error) {
 			in.Move, _ = sim.ParseDir(r.Commands[next].Action)
 			next++
 		}
-		s.Step(in)
-		h = s.StateHash()
-		trace.Write(h[:])
+		before := s.Tick()
+		events := s.Step(in)
+		if s.Tick() != before {
+			h = s.StateHash()
+			trace.Write(h[:])
+		}
+		if observe != nil {
+			observe(tick, events, s)
+		}
 	}
 
 	res := &Result{
@@ -300,4 +317,41 @@ func (res *Result) Summary() string {
 		fmt.Sprintf("final_hash=%s", res.FinalHash),
 		fmt.Sprintf("trace_hash=%s", res.TraceHash),
 	}, " ")
+}
+
+// Save writes r into dir (created if needed) as
+// <cave id>-<status>-<YYYYMMDD-HHMMSS>.json, using now for the timestamp,
+// and returns the file's path. An existing file is never overwritten.
+func Save(dir string, r *Replay, now time.Time) (string, error) {
+	data, err := Encode(r)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	status := "partial"
+	if r.Expect != nil {
+		status = r.Expect.Status
+	}
+	base := fmt.Sprintf("%s-%s-%s", r.CaveID, status, now.Format("20060102-150405"))
+	for n := 0; ; n++ {
+		name := base + ".json"
+		if n > 0 {
+			name = fmt.Sprintf("%s-%d.json", base, n)
+		}
+		path := filepath.Join(dir, name)
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		_, werr := f.Write(data)
+		if cerr := f.Close(); werr == nil {
+			werr = cerr
+		}
+		return path, werr
+	}
 }

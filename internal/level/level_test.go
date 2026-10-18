@@ -65,14 +65,18 @@ func TestInvalidLevelsFailWithUsefulErrors(t *testing.T) {
 		{name: "trailing data", raw: `{"format_version": 1} {}`, want: []string{"unexpected data after"}},
 		{name: "unknown fields", mutate: func(d map[string]any) { d["entities"] = []any{}; d["Width"] = 3 },
 			want: []string{`unknown field(s) "Width", "entities"`, "format_version, id, title"}},
+		{name: "boulder in a version 1 file", mutate: func(d map[string]any) { d["rows"] = []string{"#####", "#@*EO", "#####"} },
+			want: []string{"rows[1]: boulder(s) 'O' at x=4 need format_version 2 or later (this file is version 1)"}},
 		{name: "wrong type", mutate: func(d map[string]any) { d["width"] = "wide" },
 			want: []string{`field "width" must be an integer, not JSON string`}},
 		{name: "negative seed", mutate: func(d map[string]any) { d["seed"] = -1 },
 			want: []string{`field "seed" must be an integer`}},
 		{name: "missing format_version", mutate: func(d map[string]any) { delete(d, "format_version") },
 			want: []string{"format_version: missing"}},
-		{name: "future format_version", mutate: func(d map[string]any) { d["format_version"] = 2 },
-			want: []string{"unsupported version 2", "reads format_version 1"}},
+		{name: "future format_version", mutate: func(d map[string]any) { d["format_version"] = 3 },
+			want: []string{"unsupported version 3", "reads format_version 1 to 2"}},
+		{name: "format_version zero", mutate: func(d map[string]any) { d["format_version"] = 0 },
+			want: []string{"unsupported version 0"}},
 		{name: "missing id", mutate: func(d map[string]any) { delete(d, "id") }, want: []string{"id: missing"}},
 		{name: "bad id", mutate: func(d map[string]any) { d["id"] = "Cave 1" }, want: []string{`id: "Cave 1" must be`}},
 		{name: "blank title", mutate: func(d map[string]any) { d["title"] = "  " }, want: []string{"title: missing or blank"}},
@@ -82,8 +86,8 @@ func TestInvalidLevelsFailWithUsefulErrors(t *testing.T) {
 		{name: "missing rows", mutate: func(d map[string]any) { delete(d, "rows") }, want: []string{"rows: missing"}},
 		{name: "row too short", mutate: func(d map[string]any) { d["rows"] = []string{"#####", "#@*E", "#####"} },
 			want: []string{"rows[1]: has 4 symbols but width is 5"}},
-		{name: "unknown symbol with position", mutate: func(d map[string]any) { d["rows"] = []string{"#####", "#@*EO", "#####"} },
-			want: []string{"rows[1]: unknown tile symbol(s) 'O' at x=4", "valid symbols are '#' wall"}},
+		{name: "unknown symbol with position", mutate: func(d map[string]any) { d["rows"] = []string{"#####", "#@*EQ", "#####"} },
+			want: []string{"rows[1]: unknown tile symbol(s) 'Q' at x=4", "valid symbols are '#' wall"}},
 		{name: "tab is not empty", mutate: func(d map[string]any) { d["rows"] = []string{"#####", "#@*E\t", "#####"} },
 			want: []string{`'\t' at x=4`}},
 		{name: "open-exit dump symbol not allowed", mutate: func(d map[string]any) { d["rows"] = []string{"#####", "#@*EX", "#####"} },
@@ -130,6 +134,24 @@ func TestInvalidLevelsFailWithUsefulErrors(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestVersion2ReadsBoulders(t *testing.T) {
+	doc := baseDoc()
+	doc["format_version"] = 2
+	doc["rows"] = []string{"#####", "#@*E#", "#O  #", "#####"}
+	doc["height"] = 4
+	l, err := Parse("v2.json", encode(t, doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := sim.New(l.Cave(), l.Seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Boulders() != 1 || s.Cell(sim.Pos{X: 1, Y: 2}).Falling {
+		t.Fatalf("boulder not loaded at rest:\n%s", s.ASCII())
 	}
 }
 

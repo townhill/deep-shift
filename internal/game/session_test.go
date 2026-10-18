@@ -130,44 +130,9 @@ func TestRestartOnlyFromPauseOrCompletion(t *testing.T) {
 // Drives the session with keyboard-style controls through a complete run of
 // the test cave, then checks the recorded commands replay to the same hash.
 func TestPlayedSessionReplaysToTheSameHash(t *testing.T) {
-	fixture := func() *replay.Replay {
-		r, err := replay.Parse("fixture", mustRead(t, "../../testdata/replays/test_cave_complete.json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return r
-	}()
+	fixture := loadFixture(t, "test_cave_complete.json")
 	s := newSession(t)
-	// Press each fixture direction exactly when the fixture does, by holding
-	// the key across that tick's updates only.
-	next := 0
-	for s.Snapshot().Status != sim.StatusComplete && s.Snapshot().Tick < fixture.Ticks {
-		var c Controls
-		if next < len(fixture.Commands) && fixture.Commands[next].Tick == s.Snapshot().Tick {
-			switch fixture.Commands[next].Action {
-			case "up":
-				c.Up = true
-			case "down":
-				c.Down = true
-			case "left":
-				c.Left = true
-			case "right":
-				c.Right = true
-			}
-		}
-		before := s.Snapshot().Tick
-		for s.Snapshot().Tick == before {
-			s.Update(c)
-		}
-		if next < len(fixture.Commands) && fixture.Commands[next].Tick == before {
-			next++
-		}
-		// Release between ticks so every press is a fresh edge.
-		s.Update(none)
-		if s.Snapshot().Tick != before+1 {
-			t.Fatal("release update unexpectedly crossed a tick")
-		}
-	}
+	driveFixture(t, s, fixture)
 	if s.Snapshot().Status != sim.StatusComplete {
 		t.Fatalf("session did not complete the cave:\n%s", s.Snapshot().ASCII())
 	}
@@ -180,11 +145,14 @@ func TestPlayedSessionReplaysToTheSameHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.FinalHash != s.StateHash() {
-		t.Fatal("replaying the session's recorded commands gave a different hash")
+	if err := r.Check(res); err != nil {
+		t.Fatalf("the session's own replay does not reproduce it: %v", err)
 	}
 	if got, want := res.FinalHash.String(), fixture.Expect.FinalHash; got != want {
 		t.Fatalf("session final hash %s differs from the fixture's %s", got, want)
+	}
+	if got, want := res.TraceHash.String(), fixture.Expect.TraceHash; got != want {
+		t.Fatalf("session trace hash %s differs from the fixture's %s", got, want)
 	}
 }
 
