@@ -8,7 +8,10 @@
 package game
 
 import (
+	"cmp"
+	"crypto/sha256"
 	"fmt"
+	"hash"
 	"slices"
 
 	"github.com/townhill/deep-shift/internal/level"
@@ -30,6 +33,10 @@ const UpdatesPerTick = UpdatesPerSecond / sim.TicksPerSecond
 // arrives before the next move can start. Provisional.
 const SlideUpdates = 6
 
+// BoulderSlideUpdates is how long a boulder sprite glides between cells: one
+// gravity interval, so a falling boulder moves continuously.
+const BoulderSlideUpdates = sim.GravityIntervalTicks * UpdatesPerTick
+
 // promptUpdates is how long transient HUD prompts stay visible.
 const promptUpdates = 2 * UpdatesPerSecond
 
@@ -38,6 +45,7 @@ type Controls struct {
 	Up, Down, Left, Right bool // held during this update
 	Pause                 bool // pressed this update (edge-triggered)
 	Restart               bool // pressed this update (edge-triggered)
+	Next                  bool // pressed this update (edge-triggered); handled by Playlist
 }
 
 func (c Controls) held(d sim.Dir) bool {
@@ -69,13 +77,22 @@ type Session struct {
 	pending sim.Dir   // a press not yet consumed by a movement window
 
 	commands []replay.Command // every move input sent this attempt
+	trace    hash.Hash        // SHA-256 over every state hash this attempt (see replay.Result)
+	finished bool             // the attempt ended and FinishedReplay has not been taken
 
 	slideFrom, slideTo sim.Pos
 	slide              int
+	boulders           map[int]boulderSlide // gliding boulders by destination cell index
 	facing             sim.Dir
 	prompt             string
 	promptLeft         int
 	camera             Camera
+}
+
+type boulderSlide struct {
+	fromX, fromY float64 // visual start, tile units
+	to           sim.Pos
+	age          int // updates since the move
 }
 
 // NewSession starts a session on l with a view of viewW x viewH tiles.
@@ -85,6 +102,7 @@ func NewSession(l *level.Level, viewW, viewH int) (*Session, error) {
 		return nil, err
 	}
 	gs := &Session{level: l, sim: s, camera: Camera{ViewW: float64(viewW), ViewH: float64(viewH)}}
+	gs.resetAttempt()
 	gs.resetPresentation()
 	gs.setPrompt("Collect crystals to unseal the exit")
 	return gs, nil
@@ -93,19 +111,19 @@ func NewSession(l *level.Level, viewW, viewH int) (*Session, error) {
 // Update advances the session by one platform update.
 func (s *Session) Update(c Controls) {
 	s.trackDirections(c)
-	complete := s.sim.Status() == sim.StatusComplete
+	ended := s.Ended()
 	switch {
-	case c.Restart && (s.paused || complete):
+	case c.Restart && (s.paused || ended):
 		s.Restart()
 		return
-	case c.Pause && !complete:
+	case c.Pause && !ended:
 		s.paused = !s.paused
 		s.pending = sim.DirNone // input is not consumed across a pause
 	}
 	if s.paused {
 		return
 	}
-	if !complete {
+	if !ended {
 		s.phase++
 		if s.phase >= UpdatesPerTick {
 			s.phase = 0
@@ -150,14 +168,17 @@ func (s *Session) tick() {
 	if in.Move != sim.DirNone {
 		s.commands = append(s.commands, replay.Command{Tick: s.sim.Tick(), Action: in.Move.String()})
 	}
-	from := s.sim.Player()
 	events := s.sim.Step(in)
+	h := s.sim.StateHash()
+	s.trace.Write(h[:])
 	s.snap = s.sim.Snapshot()
 	for _, e := range events {
 		switch e.Kind {
 		case sim.EventMoved:
-			s.slideFrom, s.slideTo, s.slide = from, e.Pos, 0
+			s.slideFrom, s.slideTo, s.slide = e.From, e.Pos, 0
 			s.facing = in.Move
+		case sim.EventBoulderFell, sim.EventBoulderRolled, sim.EventBoulderPushed:
+			s.startBoulderSlide(e.From, e.Pos)
 		case sim.EventExitSealed:
 			need := s.sim.Required() - s.sim.Collected()
 			s.setPrompt(fmt.Sprintf("Exit sealed: collect %d more %s", need, plural(need, "crystal")))
@@ -165,11 +186,40 @@ func (s *Session) tick() {
 			s.setPrompt("Quota met: the exit is open")
 		}
 	}
+	if s.Ended() {
+		s.finished = true
+	}
 }
+
+// startBoulderSlide begins a glide from the boulder's current visual
+// position (it may still be gliding into from) to its new cell.
+func (s *Session) startBoulderSlide(from, to sim.Pos) {
+	fi, ti := s.index(from), s.index(to)
+	fx, fy := float64(from.X), float64(from.Y)
+	if prev, ok := s.boulders[fi]; ok {
+		fx, fy = prev.position()
+		delete(s.boulders, fi)
+	}
+	s.boulders[ti] = boulderSlide{fromX: fx, fromY: fy, to: to}
+}
+
+func (b boulderSlide) position() (x, y float64) {
+	t := float64(b.age) / BoulderSlideUpdates
+	return b.fromX + (float64(b.to.X)-b.fromX)*t, b.fromY + (float64(b.to.Y)-b.fromY)*t
+}
+
+func (s *Session) index(p sim.Pos) int { return p.Y*s.snap.Width + p.X }
 
 func (s *Session) advancePresentation() {
 	if s.slide < SlideUpdates {
 		s.slide++
+	}
+	for i, b := range s.boulders {
+		if b.age++; b.age >= BoulderSlideUpdates {
+			delete(s.boulders, i)
+		} else {
+			s.boulders[i] = b
+		}
 	}
 	if s.promptLeft > 0 {
 		s.promptLeft--
@@ -185,12 +235,23 @@ func (s *Session) Restart() {
 	s.paused = false
 	s.phase = 0
 	s.pending = sim.DirNone
-	s.commands = nil
+	s.resetAttempt()
 	s.resetPresentation()
 	s.setPrompt("Cave restarted")
 }
 
+// resetAttempt clears the per-attempt record: commands and the trace hash,
+// which starts with the tick-0 state hash just as a replay run does.
+func (s *Session) resetAttempt() {
+	s.commands = nil
+	s.finished = false
+	s.trace = sha256.New()
+	h := s.sim.StateHash()
+	s.trace.Write(h[:])
+}
+
 func (s *Session) resetPresentation() {
+	s.boulders = map[int]boulderSlide{}
 	s.snap = s.sim.Snapshot()
 	s.slideFrom, s.slideTo, s.slide = s.snap.Player, s.snap.Player, SlideUpdates
 	s.facing = sim.DirNone
@@ -211,6 +272,15 @@ func (s *Session) PlayerPosition() (x, y float64) {
 // Paused reports whether the session is paused.
 func (s *Session) Paused() bool { return s.paused }
 
+// Ended reports whether the attempt is over (cave complete or player dead).
+func (s *Session) Ended() bool { return s.sim.Status() != sim.StatusPlaying }
+
+// Level returns the cave being played.
+func (s *Session) Level() *level.Level { return s.level }
+
+// Notify shows a transient HUD prompt, for messages from the platform layer.
+func (s *Session) Notify(msg string) { s.setPrompt(msg) }
+
 // Snapshot returns the latest simulation snapshot.
 func (s *Session) Snapshot() sim.Snapshot { return s.snap }
 
@@ -220,18 +290,47 @@ func (s *Session) StateHash() sim.Hash { return s.sim.StateHash() }
 // Commands returns a copy of the move inputs sent during this attempt.
 func (s *Session) Commands() []replay.Command { return slices.Clone(s.commands) }
 
-// Replay packages this attempt as a replay covering every tick so far.
+// Replay packages this attempt as a replay covering every tick so far, with
+// an expect block (final and trace hashes) that re-running it must match.
+// It returns nil before the first tick.
 func (s *Session) Replay(description string) *replay.Replay {
-	return &replay.Replay{
+	if s.sim.Tick() == 0 {
+		return nil
+	}
+	r := &replay.Replay{
 		FormatVersion: replay.FormatVersion,
 		Description:   description,
 		CaveID:        s.level.ID,
 		CaveChecksum:  s.level.Checksum(),
 		Seed:          s.sim.Seed(),
 		RuleVersion:   sim.RuleVersion,
-		Ticks:         max(s.sim.Tick(), 1),
+		Ticks:         s.sim.Tick(),
 		Commands:      s.Commands(),
+		Expect: &replay.Expect{
+			FinalTick: s.sim.Tick(),
+			Status:    s.sim.Status().String(),
+			Collected: s.sim.Collected(),
+			FinalHash: s.sim.StateHash().String(),
+		},
 	}
+	var th sim.Hash
+	copy(th[:], s.trace.Sum(nil))
+	r.Expect.TraceHash = th.String()
+	return r
+}
+
+// FinishedReplay returns the replay of an attempt that has just ended
+// (completed or died), once per attempt, so the platform layer can log it.
+func (s *Session) FinishedReplay() (*replay.Replay, bool) {
+	if !s.finished {
+		return nil, false
+	}
+	s.finished = false
+	what := "completed the cave"
+	if s.sim.Status() == sim.StatusDead {
+		what = "was crushed"
+	}
+	return s.Replay(fmt.Sprintf("Recorded in the app: the player %s on %q at tick %d.", what, s.level.ID, s.sim.Tick())), true
 }
 
 // HUD is the text the renderer shows. Building it here keeps the wording
@@ -264,10 +363,16 @@ func (s *Session) HUD() HUD {
 		h.Overlay = []string{
 			"CAVE COMPLETE",
 			fmt.Sprintf("%d %s in %s", s.snap.Collected, plural(s.snap.Collected, "crystal"), clock(s.snap.Tick)),
-			"R: play again",
+			"R: play again   N: next cave",
+		}
+	case s.snap.Status == sim.StatusDead:
+		h.Overlay = []string{
+			"CRUSHED",
+			"A falling boulder landed on you",
+			"R: try again   N: next cave",
 		}
 	case s.paused:
-		h.Overlay = []string{"PAUSED", "Esc: resume   R: restart cave"}
+		h.Overlay = []string{"PAUSED", "Esc: resume   R: restart   N: next cave"}
 	}
 	return h
 }
@@ -279,18 +384,36 @@ type Frame struct {
 	PlayerX, PlayerY float64 // interpolated, tile units
 	CameraX, CameraY float64 // top-left of the view, tile units
 	Facing           sim.Dir
-	HUD              HUD
+	// Gliding lists boulders still sliding into their cells, in cell order;
+	// draw these at X, Y instead of at Cell.
+	Gliding []GlidingBoulder
+	HUD     HUD
+}
+
+// GlidingBoulder is a boulder drawn between cells.
+type GlidingBoulder struct {
+	Cell sim.Pos
+	X, Y float64 // tile units
 }
 
 // Frame returns the current view model.
 func (s *Session) Frame() Frame {
 	px, py := s.PlayerPosition()
+	var gliding []GlidingBoulder
+	for _, b := range s.boulders {
+		x, y := b.position()
+		gliding = append(gliding, GlidingBoulder{Cell: b.to, X: x, Y: y})
+	}
+	slices.SortFunc(gliding, func(a, b GlidingBoulder) int {
+		return cmp.Or(cmp.Compare(a.Cell.Y, b.Cell.Y), cmp.Compare(a.Cell.X, b.Cell.X))
+	})
 	return Frame{
 		Snapshot: s.snap,
 		PlayerX:  px, PlayerY: py,
 		CameraX: s.camera.X, CameraY: s.camera.Y,
-		Facing: s.facing,
-		HUD:    s.HUD(),
+		Facing:  s.facing,
+		Gliding: gliding,
+		HUD:     s.HUD(),
 	}
 }
 

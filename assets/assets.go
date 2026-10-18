@@ -15,3 +15,6 @@ const LevelDir = "levels"
 
 // TestCave is the path of the Phase 1 test cave inside Levels.
 const TestCave = "levels/test_cave.json"
+
+// PlayOrder lists every embedded cave id in the order the app plays them.
+var PlayOrder = []string{"test_cave", "cave_02", "cave_03"}
