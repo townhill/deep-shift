@@ -17,4 +17,4 @@ const LevelDir = "levels"
 const TestCave = "levels/test_cave.json"
 
 // PlayOrder lists every embedded cave id in the order the app plays them.
-var PlayOrder = []string{"test_cave", "cave_02", "cave_03"}
+var PlayOrder = []string{"test_cave", "cave_02", "cave_03", "cave_04"}

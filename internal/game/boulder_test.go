@@ -2,6 +2,7 @@ package game
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -128,7 +129,7 @@ func TestPlaylistSwitchesCaveOnlyFromPauseOrEnd(t *testing.T) {
 	if p.Index() != 1 || p.Session().Level().ID != "cave_02" || p.Session().Paused() {
 		t.Fatalf("N from pause: index %d cave %s", p.Index(), p.Session().Level().ID)
 	}
-	for range 2 {
+	for range len(ordered) - 1 {
 		p.Update(Controls{Pause: true})
 		p.Update(Controls{Next: true})
 	}
@@ -145,7 +146,9 @@ func TestPlayOrderListsEveryEmbeddedCaveOnce(t *testing.T) {
 	if _, err := OrderLevels(all, assets.PlayOrder); err != nil {
 		t.Fatalf("assets.PlayOrder is out of date: %v", err)
 	}
-	if _, err := OrderLevels(all, []string{"test_cave", "cave_02", "nope"}); err == nil || !strings.Contains(err.Error(), `"nope"`) {
+	bad := slices.Clone(assets.PlayOrder)
+	bad[len(bad)-1] = "nope"
+	if _, err := OrderLevels(all, bad); err == nil || !strings.Contains(err.Error(), `"nope"`) {
 		t.Fatalf("unknown id accepted: %v", err)
 	}
 	if _, err := OrderLevels(all, []string{"test_cave"}); err == nil {

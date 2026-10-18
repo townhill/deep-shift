@@ -1,0 +1,35 @@
+{
+  "format_version": 3,
+  "id": "cave_04",
+  "title": "Reservoir",
+  "width": 30,
+  "height": 16,
+  "seed": 20261020,
+  "required_crystals": 7,
+  "rows": [
+    "##############################",
+    "#@     ......#........*......#",
+    "#      ....*.#...............#",
+    "#1111........ ...............#",
+    "#............#......*........#",
+    "#..........  ................#",
+    "############V~~###############",
+    "#############~~###############",
+    "#############~~###############",
+    "#############~~###############",
+    "#############~~###############",
+    "#############GG###############",
+    "#..*.....*..#  #.........*...#",
+    "#...*.....        ......*....#",
+    "#.........   *    ........E..#",
+    "##############################"
+  ],
+  "mechanisms": [
+    {"valve": {"x": 12, "y": 6}, "gates": [{"x": 13, "y": 11}, {"x": 14, "y": 11}]}
+  ],
+  "metadata": {
+    "author": "Deep Shift project (original layout)",
+    "difficulty": "tutorial",
+    "purpose": "Water and barrier: the only way down is a flooded shaft, too deep to wade. The valve beside its mouth opens the sluice gate at its foot; the water drains into the basin below and the shaft becomes the way on."
+  }
+}
