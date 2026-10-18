@@ -48,6 +48,7 @@ type Controls struct {
 	Pause                 bool // pressed this update (edge-triggered)
 	Restart               bool // pressed this update (edge-triggered)
 	Next                  bool // pressed this update (edge-triggered); handled by Playlist
+	Menu                  bool // pressed this update (edge-triggered); handled by Shell
 }
 
 func (c Controls) held(d sim.Dir) bool {
@@ -446,16 +447,16 @@ func (s *Session) HUD() HUD {
 		h.Overlay = []string{
 			"CAVE COMPLETE",
 			fmt.Sprintf("%d %s in %s", s.snap.Collected, plural(s.snap.Collected, "crystal"), clock(s.snap.Tick)),
-			"R: play again   N: next cave",
+			"R: play again   N: next cave   C: caves",
 		}
 	case s.snap.Status == sim.StatusDead:
 		h.Overlay = []string{
 			"CRUSHED",
 			fmt.Sprintf("A falling %s landed on you", s.crushedBy),
-			"R: try again   N: next cave",
+			"R: try again   N: next cave   C: caves",
 		}
 	case s.paused:
-		h.Overlay = []string{"PAUSED", "Esc: resume   R: restart   N: next cave"}
+		h.Overlay = []string{"PAUSED", "Esc: resume   R: restart   N: next cave   C: caves"}
 	}
 	return h
 }

@@ -39,6 +39,8 @@ var (
 	hudRuleColour      = color.RGBA{60, 200, 210, 0xff}
 	waterColour        = color.NRGBA{40, 110, 200, 150}
 	waterSurfaceColour = color.NRGBA{170, 215, 245, 200}
+	menuSelectColour   = color.NRGBA{60, 200, 210, 70}
+	dimTextColour      = color.NRGBA{150, 160, 175, 255}
 )
 
 // Renderer owns the GPU images used to draw frames.
@@ -215,13 +217,62 @@ func (r *Renderer) drawOverlay(screen *ebiten.Image, lines []string) {
 	}
 }
 
+// DrawMenu renders a title or cave-select screen: a background of floor
+// and wall tiles, the title at 4x, entries centred with the selection
+// highlighted, and a footer of key hints.
+func (r *Renderer) DrawMenu(screen *ebiten.Image, v game.MenuView) {
+	screen.Fill(backgroundColour)
+	op := &ebiten.DrawImageOptions{}
+	for y := 0; y < ScreenHeight/TileSize+1; y++ {
+		for x := 0; x < ViewTilesW; x++ {
+			k := sprites.Empty
+			if y == 0 || x == 0 || x == ViewTilesW-1 || y >= ScreenHeight/TileSize-1 {
+				k = sprites.Wall
+			}
+			op.GeoM.Reset()
+			op.GeoM.Translate(float64(x*TileSize), float64(y*TileSize))
+			screen.DrawImage(r.tiles[k], op)
+		}
+	}
+	centre := func(s string, scale int) int { return (ScreenWidth - len(s)*glyphW*scale) / 2 }
+	y := 96
+	r.drawTextScaled(screen, v.Title, centre(v.Title, 4), y, 4, color.White)
+	y += glyphH*4 + 8
+	r.drawTextScaled(screen, v.Subtitle, centre(v.Subtitle, textScale), y, textScale, dimTextColour)
+	y += lineHeight + 24
+	for _, e := range v.Entries {
+		text := e.Text
+		c := color.Color(color.White)
+		switch {
+		case e.Heading:
+			c = dimTextColour
+		case e.Selected:
+			text = "> " + text + " <"
+			r.fillRect(screen, 2*TileSize, y-4, ScreenWidth-4*TileSize, lineHeight+4, menuSelectColour)
+		}
+		r.drawTextScaled(screen, text, centre(text, textScale), y, textScale, c)
+		y += lineHeight + 6
+	}
+	r.drawTextScaled(screen, v.Footer, centre(v.Footer, textScale), ScreenHeight-2*TileSize-lineHeight/2, textScale, color.White)
+	if r.build != "" {
+		ebitenutil.DebugPrintAt(screen, "build "+r.build, 8, ScreenHeight-glyphH-4)
+	}
+}
+
 // drawText draws one line of debug-font text at 2x, nearest-neighbour.
 func (r *Renderer) drawText(screen *ebiten.Image, s string, x, y int) {
+	r.drawTextScaled(screen, s, x, y, textScale, color.White)
+}
+
+// drawTextScaled draws one line of debug-font text at an integer scale in
+// colour c, nearest-neighbour.
+func (r *Renderer) drawTextScaled(screen *ebiten.Image, s string, x, y, scale int, c color.Color) {
 	r.text.Clear()
 	ebitenutil.DebugPrintAt(r.text, s, 0, 0)
 	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Scale(textScale, textScale)
+	op.GeoM.Scale(float64(scale), float64(scale))
 	op.GeoM.Translate(float64(x), float64(y))
+	op.ColorScale.ScaleWithColor(c)
 	screen.DrawImage(r.text, op)
 }
 

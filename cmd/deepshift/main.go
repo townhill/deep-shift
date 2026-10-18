@@ -1,7 +1,7 @@
-// Command deepshift is the native desktop entrypoint: it opens one window,
-// plays the embedded caves in order and renders them with Ebitengine. No web
-// view, no server. Each finished attempt (completed or crushed) is saved as
-// a replay under the user config directory, for bug reports.
+// Command deepshift is the native desktop entrypoint: it opens one window on
+// the title menu, plays the embedded caves and renders them with Ebitengine.
+// No web view, no server. Each finished attempt (completed or crushed) is
+// saved as a replay under the user config directory, for bug reports.
 //
 // Ebitengine is initialised only here and in internal/render, so `go test`
 // never needs a display. GUI behaviour is compile-only in cloud CI and still
@@ -39,52 +39,58 @@ func main() {
 		return
 	}
 
-	levels, start, err := loadLevels(*cave)
+	levels, campaign, start, err := loadLevels(*cave)
 	if err != nil {
 		log.Fatal(err)
 	}
-	playlist, err := game.NewPlaylist(levels, start, render.ViewTilesW, render.ViewTilesH)
+	shell, err := game.NewShell(levels, campaign, render.ViewTilesW, render.ViewTilesH)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if start >= 0 {
+		if err := shell.Play(start); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	ebiten.SetWindowTitle("Deep Shift")
 	ebiten.SetWindowSize(render.ScreenWidth*5/4, render.ScreenHeight*5/4)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetTPS(game.UpdatesPerSecond)
-	a := &app{playlist: playlist, renderer: render.New(build), replayDir: *replayDir}
+	a := &app{shell: shell, renderer: render.New(build), replayDir: *replayDir}
 	if err := ebiten.RunGame(a); err != nil {
 		log.Fatal(err)
 	}
 }
 
-// loadLevels returns the caves to play and where to start. arg is empty
-// (all embedded caves from the first), an embedded cave id, or a file path
-// (that cave alone).
-func loadLevels(arg string) ([]*level.Level, int, error) {
+// loadLevels returns the caves to offer, how many of them are the campaign,
+// and which to start playing at once (-1: open on the title menu). arg is
+// empty (title menu), an embedded cave id (play it), or a file path (play
+// that cave alone).
+func loadLevels(arg string) (levels []*level.Level, campaign, start int, err error) {
 	embedded, err := level.LoadDir(assets.Levels, assets.LevelDir)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 	ordered, err := game.OrderLevels(embedded, assets.PlayOrder)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 	if arg == "" {
-		return ordered, 0, nil
+		return ordered, len(assets.Campaign), -1, nil
 	}
 	if i, ok := game.IndexOf(ordered, arg); ok {
-		return ordered, i, nil
+		return ordered, len(assets.Campaign), i, nil
 	}
 	data, err := os.ReadFile(arg)
 	if err != nil {
-		return nil, 0, fmt.Errorf("-cave %q is neither an embedded cave id nor a readable file: %w", arg, err)
+		return nil, 0, 0, fmt.Errorf("-cave %q is neither an embedded cave id nor a readable file: %w", arg, err)
 	}
 	l, err := level.Parse(arg, data)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
-	return []*level.Level{l}, 0, nil
+	return []*level.Level{l}, 0, 0, nil
 }
 
 // defaultReplayDir is <user config dir>/Deep Shift/replays, which is
@@ -97,9 +103,9 @@ func defaultReplayDir() string {
 	return filepath.Join(dir, "Deep Shift", "replays")
 }
 
-// app adapts the playlist to ebiten.Game.
+// app adapts the shell to ebiten.Game.
 type app struct {
-	playlist  *game.Playlist
+	shell     *game.Shell
 	renderer  *render.Renderer
 	replayDir string
 }
@@ -108,8 +114,11 @@ func (a *app) Update() error {
 	if inpututil.IsKeyJustPressed(ebiten.KeyF) {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	}
-	a.playlist.Update(readControls())
-	s := a.playlist.Session()
+	a.shell.Update(readControls())
+	if a.shell.Screen() != game.ScreenPlaying {
+		return nil
+	}
+	s := a.shell.Playlist().Session()
 	if r, ok := s.FinishedReplay(); ok && a.replayDir != "" {
 		path, err := replay.Save(a.replayDir, r, time.Now())
 		if err != nil {
@@ -124,7 +133,11 @@ func (a *app) Update() error {
 }
 
 func (a *app) Draw(screen *ebiten.Image) {
-	a.renderer.Draw(screen, a.playlist.Session().Frame())
+	if a.shell.Screen() != game.ScreenPlaying {
+		a.renderer.DrawMenu(screen, a.shell.Menu())
+		return
+	}
+	a.renderer.Draw(screen, a.shell.Playlist().Session().Frame())
 }
 
 func (a *app) Layout(int, int) (int, int) {
@@ -153,6 +166,7 @@ func readControls() game.Controls {
 		Pause:    inpututil.IsKeyJustPressed(ebiten.KeyEscape),
 		Restart:  inpututil.IsKeyJustPressed(ebiten.KeyR),
 		Next:     inpututil.IsKeyJustPressed(ebiten.KeyN),
+		Menu:     inpututil.IsKeyJustPressed(ebiten.KeyC),
 	}
 }
 

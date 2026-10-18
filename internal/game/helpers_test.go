@@ -48,6 +48,18 @@ func driveFixture(t *testing.T, s *Session, fixture *replay.Replay) {
 // driveFixtureUntil is driveFixture stopping before tick stop.
 func driveFixtureUntil(t *testing.T, s *Session, fixture *replay.Replay, stop uint64) {
 	t.Helper()
+	drive(t, s.Update, func() *Session { return s }, fixture, stop)
+}
+
+// driveShellFixture is driveFixture through a Shell that is already playing.
+func driveShellFixture(t *testing.T, sh *Shell, fixture *replay.Replay) {
+	t.Helper()
+	drive(t, sh.Update, func() *Session { return sh.Playlist().Session() }, fixture, fixture.Ticks)
+}
+
+func drive(t *testing.T, update func(Controls), session func() *Session, fixture *replay.Replay, stop uint64) {
+	t.Helper()
+	s := session()
 	next := 0
 	for next < len(fixture.Commands) && fixture.Commands[next].Tick < s.Snapshot().Tick {
 		next++ // resume after an earlier call
@@ -71,9 +83,9 @@ func driveFixtureUntil(t *testing.T, s *Session, fixture *replay.Replay, stop ui
 			next++
 		}
 		for s.Snapshot().Tick == tick {
-			s.Update(c)
+			update(c)
 		}
-		s.Update(Controls{})
+		update(Controls{})
 		if !s.Ended() && s.Snapshot().Tick != tick+1 {
 			t.Fatal("release update unexpectedly crossed a tick")
 		}
