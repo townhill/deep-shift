@@ -204,7 +204,10 @@ The spec asked for Ebitengine 2.10's agent-oriented virtualisation to be assesse
 
 ## D-018: Boulder rules (rule version 2, provisional tuning)
 
-- **Gravity cadence:** gravity runs on ticks that are multiples of `GravityIntervalTicks = 2`, so boulders
+These gravity rules apply to crystals too ([D-019](#d-019-crystals-fall-owner-decision)); only pushing is
+boulder-specific.
+
+- **Gravity cadence:** gravity runs on ticks that are multiples of `GravityIntervalTicks = 2`, so objects
   move 10 cells/s, twice the player's walking speed. That makes falls dangerous but readable. Tune after
   playtesting.
 - **Scan order:** rows bottom to top, and left to right within a row. A supported stack therefore drops
@@ -227,23 +230,38 @@ The spec asked for Ebitengine 2.10's agent-oriented virtualisation to be assesse
 - **Order within a tick:** entering the open exit ends the tick immediately, so nothing can fall on a player
   who has just finished. The quota check is skipped on the tick the player dies.
 
-## D-019: Crystals do not fall in rule version 2 (provisional)
+## D-019: Crystals fall (owner decision)
 
-- **Decision:** crystals are rounded (boulders roll off them) but are not affected by gravity.
-- **Why:** SPEC §6.2 says gravity applies to crystals only "when sensible". Keeping them fixed means crystals
-  remain stable goals rather than a second hazard class. It also keeps every boulder-free cave, including
-  the Phase 1 test cave, behaving exactly as under rule version 1.
-- **Revisit:** after the Mac playtest of caves 02/03. Falling crystals would be a rule-version bump of its
-  own.
+- **Decision (owner, 2026-10-18):** crystals obey the same gravity as boulders. They fall, roll off
+  rounded objects and land, and a **falling crystal crushes the player**, following SPEC §6.2 ("Falling
+  objects crush a player"). The player still collects a crystal by walking into its cell, even while it is
+  falling. Crystals are never pushed. Only objects on open floor fall, so a crystal embedded in earth
+  (hand-built caves only) stays put.
+- **History:** the first Phase 2 draft kept crystals fixed (provisional, "when sensible"). The owner
+  reversed that before merge. Rule version 2 was therefore amended in place rather than bumped, because it
+  had never been merged.
+- **Consequence:** caves with loose crystals now play differently from rule version 1. In `test_cave`, two
+  crystals drop one cell at tick 0, and the test-cave fixtures were re-planned (D-020).
+- **Open option:** if playtesting shows crystal crushes feel unfair, "a falling crystal is collected
+  instead of crushing" is a one-line rule change, and would need its own decision.
 
 ## D-020: Rule version 2, hash layout v2 and the reviewed fixture changes
 
 - `sim.RuleVersion` is now 2, and the state-hash magic is `deep-shift/state-hash/v2` (one extra byte per
   cell for the falling flag). `TestStateHashGolden` was re-pinned for that.
-- **Test-cave fixtures:** both had to be re-recorded, because the rule version is part of every hash and
-  of the replay header. Before accepting new hashes, I ran both fixtures under the rule-1 build (from git)
-  and under rule 2. Final tick, status, crystal count and the final ASCII grid are identical. Each file's
-  diff is only `rule_version` and the two hashes.
+- **Test-cave fixtures, first pass (crystals fixed):** both were re-recorded because the rule version is
+  part of every hash and of the replay header. Final tick, status, crystal count and final grid were
+  identical to rule version 1.
+- **Test-cave fixtures, second pass (crystals fall, D-019):** the old routes no longer worked. Two loose
+  crystals drop at tick 0, so the static route collected only 7 of 8 (and 6 of 7 for the sealed-exit
+  fixture). Both routes were re-planned with a throwaway planner that re-plans on the real simulator after
+  every move and rejects moves leading to a crush. The opening (dropped input, sealed-exit bump) is
+  unchanged. Outcomes:
+  - completion: 8 crystals, exits at tick 846, as before;
+  - sealed exit: 7 crystals, still in play, ending at tick 819 instead of 779.
+
+  The cave_02/cave_03 fixtures were unaffected: every crystal there is supported and their routes never
+  undermine one.
 - **Trace hash semantics:** the trace now covers ticks 0 to the final tick only. Ticks after completion or
   death leave the state frozen and are no longer hashed. Before this change, a fixture that idled after the
   end and the app's own recording of the same attempt had different traces even though every real tick
@@ -259,7 +277,8 @@ The spec asked for Ebitengine 2.10's agent-oriented virtualisation to be assesse
 
 ## D-022: Death and the end of an attempt
 
-- A crush ends the attempt like completion: the world freezes and Esc does nothing. **R** restarts and
+- A crush (by a falling boulder or crystal; the overlay names which) ends the attempt like completion: the
+  world freezes and Esc does nothing. **R** restarts and
   **N** moves to the next cave, from the pause, completion and death screens (D-011 extended). The crushed
   player is drawn squashed and tinted red under a "CRUSHED" overlay.
 

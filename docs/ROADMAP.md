@@ -70,7 +70,8 @@ decisions are D-018 to D-025.
 
 Start with `go run ./cmd/deepshift -cave cave_02`, or press N on a pause or end screen to move on.
 
-- [ ] Boulders look round and distinct from crystals; falling boulders move smoothly (no jumps)
+- [ ] Boulders look round and distinct from crystals; falling boulders and crystals move smoothly (no jumps)
+- [ ] Proving Ground: the two loose crystals drop at the start; walking into a falling crystal collects it
 - [ ] cave_02: taking the first crystal from the side, then stepping aside, lets the boulder drop behind
   you; moving straight down from under it crushes you
 - [ ] Death shows CRUSHED with "R: try again   N: next cave" and a "Replay saved: …" prompt; the file
@@ -81,7 +82,8 @@ Start with `go run ./cmd/deepshift -cave cave_02`, or press N on a pause or end 
 - [ ] cave_03: digging the plug and stepping back makes the perched boulder roll into the pit
 - [ ] cave_03: pushing the boulder in the wall gap drops it into the pit, and the way east opens
 - [ ] cave_03: two boulders in a row will not move
-- [ ] Feel: is boulder speed (10 cells/s) fair? Should crystals fall too (D-019)?
+- [ ] Feel: is the fall speed (10 cells/s) fair? Do crystal crushes feel fair, or should a falling crystal
+  be collected instead (D-019)?
 
 ## Phase 3 — Water and sluice gate
 
@@ -104,6 +106,6 @@ Not started.
 | F-7 | Intel / universal (`lipo`) build and test | macOS amd64 is "desired"; currently compile-only |
 | F-8 | Rebindable keys, reduced-effects mode, UI scaling | SPEC §4 accessibility; designed for but not built |
 | F-9 | Record simulation tick timing (avg/p95) on a reference Mac | SPEC §12 performance gate; CI records a Linux benchmark only |
-| F-10 | Tune `GravityIntervalTicks` and decide whether crystals fall | Provisional values from D-018 and D-019; needs Mac playtest feedback |
+| F-10 | Tune `GravityIntervalTicks`; confirm crystal crushes feel fair | Provisional values from D-018 and D-019; needs Mac playtest feedback |
 | F-11 | Sound cues for land, push and crush events | SPEC §2 and Phase 4; the events already exist |
 | F-12 | Move `actions/upload-artifact` to a Node 24 release | CI warns that the v4 action targets Node 20 |

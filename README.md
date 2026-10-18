@@ -9,7 +9,8 @@ The game takes design inspiration from the *rules-driven* arcade cave games of t
 caves, art, names and rules are original to this project.
 
 > **Status: Phases 0–2 delivered; Phase 2 awaits a Mac playtest.** Movement, digging, crystals, walls and a
-> quota-sealed exit, plus **boulders** that fall, roll, can be pushed and crush. Three caves:
+> quota-sealed exit, plus **gravity**: boulders and crystals fall, roll and crush, and boulders can be
+> pushed. Three caves:
 >
 > - the "Proving Ground" test cave;
 > - 02 "Unstable Ground";
@@ -23,7 +24,7 @@ caves, art, names and rules are original to this project.
 | Behaviour | How it was checked | Status |
 |---|---|---|
 | Rules: movement, bounds, walls, digging, collecting, exit quota, restart | `go test ./...` (table-driven, headless) | Verified on Linux; CI also runs them on macOS arm64 |
-| Boulders: fall, roll (left first), push (no chains), crush, at most one move per tick | `go test ./...`, randomised invariant runs, golden fixtures | Verified on Linux; CI runs them on macOS arm64 |
+| Gravity: boulders and crystals fall, roll (left first) and crush; boulders push (no chains); at most one move per tick | `go test ./...`, randomised invariant runs, golden fixtures | Verified on Linux; CI runs them on macOS arm64 |
 | Determinism: 100 identical runs → identical hashes at every tick, including a death | `internal/replay` test + golden fixtures | Verified (Linux); CI checks the same golden hashes on macOS arm64 |
 | A finished attempt is saved as a replay that reproduces it exactly | Session tests; app run headlessly (below) | Verified (Linux) |
 | Cave files validate; broken caves give useful errors | `internal/level` tests, `cavetool validate` | Verified |
@@ -93,12 +94,14 @@ The caves play in order: `test_cave`, then `cave_02`, then `cave_03`. To start e
 `go run ./cmd/deepshift -cave cave_02`. To play your own cave file, run
 `go run ./cmd/deepshift -cave path/to/cave.json`; validation errors are printed to the terminal.
 
-**Rules of thumb for boulders:**
+**Rules of thumb for gravity:**
 
-- A boulder resting above you won't hurt you, but one that is falling will.
+- Boulders **and crystals** fall when there's nothing under them.
+- A boulder or crystal resting above you won't hurt you, but one that is falling will.
 - When you dig out from under a boulder, step **sideways**, never straight down.
 - You can push one boulder left or right into open floor.
-- Boulders roll off other boulders and crystals.
+- Boulders and crystals roll off each other.
+- You can still grab a falling crystal by walking into it from the side.
 
 The full rules are in [docs/PHYSICS.md](docs/PHYSICS.md).
 
