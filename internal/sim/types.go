@@ -7,7 +7,8 @@ import "fmt"
 // record the change in docs/DECISIONS.md and docs/PHYSICS.md.
 //
 //   - 1: movement, digging, crystals, quota-sealed exit.
-//   - 2: boulders fall, roll, can be pushed and crush the player.
+//   - 2: boulders and crystals fall, roll and crush the player; boulders can
+//     be pushed.
 const RuleVersion uint32 = 2
 
 // TicksPerSecond is the provisional logical simulation rate (SPEC §5).
@@ -18,7 +19,7 @@ const TicksPerSecond = 20
 // = 5 tiles per second at 20 TPS). Provisional; tune after Mac playtesting.
 const MoveIntervalTicks = 4
 
-// GravityIntervalTicks is the boulder cadence: gravity runs on every tick
+// GravityIntervalTicks is the gravity cadence: gravity runs on every tick
 // whose number is a multiple of this (10 cells per second at 20 TPS, twice
 // the player's walking speed). Provisional; tune after Mac playtesting.
 const GravityIntervalTicks = 2
@@ -80,9 +81,12 @@ func (o Occupant) String() string {
 	return fmt.Sprintf("occupant(%d)", uint8(o))
 }
 
-// Rounded reports whether boulders roll off this occupant. Boulders and
-// crystals are rounded; the player, walls, earth and the exit are flat.
+// Rounded reports whether falling objects roll off this occupant. Boulders
+// and crystals are rounded; the player, walls, earth and the exit are flat.
 func (o Occupant) Rounded() bool { return o == OccupantBoulder || o == OccupantCrystal }
+
+// Falls reports whether gravity acts on this occupant: boulders and crystals.
+func (o Occupant) Falls() bool { return o == OccupantBoulder || o == OccupantCrystal }
 
 // Cell is one grid square. Further layers (fluid, more metadata) will be
 // added as separate fields in later phases rather than overloading these
@@ -90,14 +94,15 @@ func (o Occupant) Rounded() bool { return o == OccupantBoulder || o == OccupantC
 type Cell struct {
 	Terrain  Terrain
 	Occupant Occupant
-	// Falling is boulder metadata: the boulder moved (fell or rolled) on the
-	// most recent gravity step. Only a falling boulder crushes the player, and
-	// only a resting one can be pushed. Always false for other occupants.
+	// Falling is metadata for boulders and crystals: the object moved (fell
+	// or rolled) on the most recent gravity step. Only a falling object
+	// crushes the player, and only a resting boulder can be pushed. Always
+	// false for other occupants.
 	Falling bool
 }
 
-// Empty reports whether a boulder could move into c: open floor with no
-// occupant.
+// Empty reports whether a falling object could move into c: open floor with
+// no occupant.
 func (c Cell) Empty() bool { return c.Terrain == TerrainEmpty && c.Occupant == OccupantNone }
 
 // Pos is an integer grid coordinate. The origin is the upper-left cell and Y

@@ -30,8 +30,8 @@
 //  1. Player phase: movement cooldown, then the move (dig, collect, push,
 //     exit). Entering the open exit ends the tick's updates.
 //  2. Gravity phase, on ticks that are multiples of GravityIntervalTicks:
-//     boulders fall, roll, land or crush, scanned bottom-to-top and
-//     left-to-right, each boulder at most once.
+//     boulders and crystals on open floor fall, roll, land or crush,
+//     scanned bottom-to-top and left-to-right, each at most once.
 //  3. Quota check, which may open the exit (skipped if the player died).
 //  4. Tick counter increments.
 //

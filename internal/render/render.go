@@ -96,20 +96,21 @@ func (r *Renderer) drawWorld(f game.Frame) {
 			op.GeoM.Reset()
 			op.GeoM.Translate(float64(x*TileSize)-camX, float64(y*TileSize)-camY)
 			r.world.DrawImage(r.tiles[terrainSprite(cell.Terrain, snap.ExitOpen)], op)
-			switch {
-			case cell.Occupant == sim.OccupantCrystal:
-				r.world.DrawImage(r.tiles[sprites.Crystal], op)
-			case cell.Occupant == sim.OccupantBoulder && !gliding[p]:
-				r.world.DrawImage(r.tiles[sprites.Boulder], op)
+			if k, ok := objectSprite(cell.Occupant); ok && !gliding[p] {
+				r.world.DrawImage(r.tiles[k], op)
 			}
 		}
 	}
-	// Moving boulders and the player are drawn after all terrain, at their
+	// Moving objects and the player are drawn after all terrain, at their
 	// interpolated positions, so the next row's tiles never cover them.
 	for _, g := range f.Gliding {
+		k, ok := objectSprite(g.Object)
+		if !ok {
+			continue
+		}
 		op.GeoM.Reset()
 		op.GeoM.Translate(math.Round(g.X*TileSize-camX), math.Round(g.Y*TileSize-camY))
-		r.world.DrawImage(r.tiles[sprites.Boulder], op)
+		r.world.DrawImage(r.tiles[k], op)
 	}
 	op.GeoM.Reset()
 	if snap.Status == sim.StatusDead {
@@ -120,6 +121,17 @@ func (r *Renderer) drawWorld(f game.Frame) {
 	}
 	op.GeoM.Translate(math.Round(f.PlayerX*TileSize-camX), math.Round(f.PlayerY*TileSize-camY))
 	r.world.DrawImage(r.tiles[sprites.Player], op)
+}
+
+// objectSprite returns the sprite for a boulder or crystal occupant.
+func objectSprite(o sim.Occupant) (sprites.Kind, bool) {
+	switch o {
+	case sim.OccupantCrystal:
+		return sprites.Crystal, true
+	case sim.OccupantBoulder:
+		return sprites.Boulder, true
+	}
+	return 0, false
 }
 
 func terrainSprite(t sim.Terrain, exitOpen bool) sprites.Kind {

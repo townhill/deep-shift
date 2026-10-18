@@ -26,7 +26,7 @@ func TestCrushEndsAttemptAndLogsReproducibleReplay(t *testing.T) {
 		t.Fatalf("status %s, want dead", s.Snapshot().Status)
 	}
 	overlay := strings.Join(s.HUD().Overlay, " | ")
-	if !strings.Contains(overlay, "CRUSHED") || !strings.Contains(overlay, "R: try again") {
+	if !strings.Contains(overlay, "CRUSHED") || !strings.Contains(overlay, "falling boulder") || !strings.Contains(overlay, "R: try again") {
 		t.Fatalf("death overlay = %q", overlay)
 	}
 
@@ -86,14 +86,14 @@ func TestBoulderGlidesBetweenCells(t *testing.T) {
 	// The demonstration boulder at (25,1) falls on tick 0.
 	run(s, none, UpdatesPerTick)
 	f := s.Frame()
-	if len(f.Gliding) != 1 || f.Gliding[0].Cell != (sim.Pos{X: 25, Y: 2}) {
+	if len(f.Gliding) != 1 || f.Gliding[0].Cell != (sim.Pos{X: 25, Y: 2}) || f.Gliding[0].Object != sim.OccupantBoulder {
 		t.Fatalf("gliding = %+v", f.Gliding)
 	}
 	lastY := f.Gliding[0].Y
 	if lastY <= 1 || lastY >= 2 {
 		t.Fatalf("glide started at y=%v, want between the cells", lastY)
 	}
-	for range BoulderSlideUpdates - 2 {
+	for range ObjectSlideUpdates - 2 {
 		s.Update(none)
 		g := s.Frame().Gliding
 		if len(g) == 0 {

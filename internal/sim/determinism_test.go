@@ -125,8 +125,8 @@ func randomCave(rng *SplitMix64, w, h int) Cave {
 func checkInvariants(s *Sim, initialCrystals, initialBoulders, lastCollected int) error {
 	players := 0
 	for i, c := range s.st.cells {
-		if c.Falling && c.Occupant != OccupantBoulder {
-			return fmt.Errorf("falling flag without a boulder at index %d", i)
+		if c.Falling && !c.Occupant.Falls() {
+			return fmt.Errorf("falling flag on %s at index %d", c.Occupant, i)
 		}
 		if c.Occupant == OccupantBoulder && c.Terrain != TerrainEmpty {
 			return fmt.Errorf("boulder on %s terrain at index %d", c.Terrain, i)
@@ -164,18 +164,18 @@ func checkInvariants(s *Sim, initialCrystals, initialBoulders, lastCollected int
 	return nil
 }
 
-// checkBoulderEvents verifies one tick's boulder movement: falls go exactly
-// one cell down, rolls and pushes one cell sideways, and no boulder moves
-// twice (no move starts where an earlier move in the same tick ended, and no
-// two moves share a start or an end).
-func checkBoulderEvents(events []Event) error {
+// checkMoveEvents verifies one tick's object movement: falls go exactly one
+// cell down, rolls and pushes one cell sideways, and no object moves twice
+// (no move starts where an earlier move in the same tick ended, and no two
+// moves share a start or an end).
+func checkMoveEvents(events []Event) error {
 	starts, ends := map[Pos]bool{}, map[Pos]bool{}
 	for _, e := range events {
 		var dx, dy int
 		switch e.Kind {
-		case EventBoulderFell:
+		case EventFell:
 			dx, dy = 0, 1
-		case EventBoulderRolled, EventBoulderPushed:
+		case EventRolled, EventBoulderPushed:
 			dx, dy = e.Pos.X-e.From.X, 0
 			if dx != 1 && dx != -1 {
 				return fmt.Errorf("%v is not one cell sideways", e)
@@ -187,7 +187,7 @@ func checkBoulderEvents(events []Event) error {
 			return fmt.Errorf("%v moved more than one cell", e)
 		}
 		if ends[e.From] || starts[e.From] || ends[e.Pos] {
-			return fmt.Errorf("%v: a boulder moved twice in one tick", e)
+			return fmt.Errorf("%v: an object moved twice in one tick", e)
 		}
 		starts[e.From], ends[e.Pos] = true, true
 	}
@@ -215,7 +215,7 @@ func TestRandomisedRunsKeepInvariantsAndDeterminism(t *testing.T) {
 				in := Input{Move: Dir(inputRNG.Intn(5))}
 				ev := a.Step(in)
 				b.Step(in)
-				if err := checkBoulderEvents(ev); err != nil {
+				if err := checkMoveEvents(ev); err != nil {
 					t.Fatalf("seed %d tick %d: %v\n%s", seed, tick, err, a.ASCII())
 				}
 				if err := checkInvariants(a, initialCrystals, initialBoulders, lastCollected); err != nil {

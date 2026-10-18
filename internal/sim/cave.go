@@ -66,8 +66,8 @@ func (c *Cave) Validate() error {
 			errs = append(errs, fmt.Errorf("cell %s: unknown occupant %d", p, cell.Occupant))
 			continue
 		}
-		if cell.Falling && cell.Occupant != OccupantBoulder {
-			errs = append(errs, fmt.Errorf("cell %s: only boulders can be falling", p))
+		if cell.Falling && !cell.Occupant.Falls() {
+			errs = append(errs, fmt.Errorf("cell %s: only boulders and crystals can be falling", p))
 		}
 		if cell.Occupant == OccupantNone {
 			continue

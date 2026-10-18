@@ -9,7 +9,7 @@ type Sim struct {
 	seed    uint64
 	exits   []Pos // exit cells in row-major order; terrain never changes
 	st      state
-	updated []bool // gravity scratch: cells whose boulder already moved this step
+	updated []bool // gravity scratch: cells whose object already moved this step
 	pushed  int    // index of the boulder pushed this tick, or -1
 }
 
@@ -125,7 +125,8 @@ func (s *Sim) stepPlayer(in Input, events []Event) []Event {
 	}
 
 	// The move succeeds. The only player is the mover and pushing emptied a
-	// boulder cell, so the destination now holds no occupant or a crystal.
+	// boulder cell, so the destination now holds no occupant or a crystal,
+	// which may be falling: walking into it still collects it.
 	from := st.player
 	dug := dst.Terrain == TerrainEarth
 	collected := dst.Occupant == OccupantCrystal
@@ -136,7 +137,7 @@ func (s *Sim) stepPlayer(in Input, events []Event) []Event {
 		st.collected++
 	}
 	st.cells[s.initial.Index(from)].Occupant = OccupantNone
-	dst.Occupant = OccupantPlayer
+	dst.Occupant, dst.Falling = OccupantPlayer, false
 	st.player = to
 	st.moveCooldown = MoveIntervalTicks - 1
 
@@ -148,7 +149,7 @@ func (s *Sim) stepPlayer(in Input, events []Event) []Event {
 		events = append(events, Event{Tick: st.tick, Kind: EventCollected, Pos: to})
 	}
 	if pushed {
-		events = append(events, Event{Tick: st.tick, Kind: EventBoulderPushed, Pos: pushedTo, From: to})
+		events = append(events, Event{Tick: st.tick, Kind: EventBoulderPushed, Pos: pushedTo, From: to, Object: OccupantBoulder})
 	}
 	if dst.Terrain == TerrainExit {
 		st.status = StatusComplete
@@ -157,11 +158,12 @@ func (s *Sim) stepPlayer(in Input, events []Event) []Event {
 	return events
 }
 
-// stepGravity is the boulder phase. Rows are scanned bottom to top and each
-// row left to right, so a supported stack falls together. A boulder moves at
-// most one cell per tick: cells a boulder moved into are marked updated and
-// skipped if the scan reaches them again (a boulder that rolled right), and
-// a boulder pushed this tick sits out this step.
+// stepGravity is the gravity phase for boulders and crystals lying on open
+// floor. Rows are scanned bottom to top and each row left to right, so a
+// supported stack falls together. An object moves at most one cell per tick:
+// cells an object moved into are marked updated and skipped if the scan
+// reaches them again (an object that rolled right), and a boulder pushed
+// this tick sits out this step.
 func (s *Sim) stepGravity(events []Event) []Event {
 	clear(s.updated)
 	if s.pushed >= 0 {
@@ -171,56 +173,58 @@ func (s *Sim) stepGravity(events []Event) []Event {
 	for y := s.initial.Height - 1; y >= 0; y-- {
 		for x := range w {
 			i := y*w + x
-			if s.st.cells[i].Occupant == OccupantBoulder && !s.updated[i] {
-				events = s.updateBoulder(Pos{x, y}, events)
+			c := s.st.cells[i]
+			if c.Occupant.Falls() && c.Terrain == TerrainEmpty && !s.updated[i] {
+				events = s.updateFalling(Pos{x, y}, events)
 			}
 		}
 	}
 	return events
 }
 
-// updateBoulder applies, in order: fall into empty floor below; crush the
+// updateFalling applies, in order: fall into empty floor below; crush the
 // player below if already falling; roll off a rounded blocker (left side
 // first, then right) when the side cell and the cell below it are both
 // empty; otherwise come to rest.
-func (s *Sim) updateBoulder(p Pos, events []Event) []Event {
+func (s *Sim) updateFalling(p Pos, events []Event) []Event {
 	st := &s.st
-	b := &st.cells[s.initial.Index(p)]
+	o := &st.cells[s.initial.Index(p)]
+	obj := o.Occupant
 	if below := p.Add(DirDown); s.initial.InBounds(below) {
 		bc := st.cells[s.initial.Index(below)]
 		switch {
 		case bc.Empty():
-			s.moveBoulder(p, below)
-			return append(events, Event{Tick: st.tick, Kind: EventBoulderFell, Pos: below, From: p})
-		case bc.Occupant == OccupantPlayer && b.Falling && st.status == StatusPlaying:
-			// The boulder stops on the player; the attempt ends this tick.
-			b.Falling = false
+			s.moveObject(p, below)
+			return append(events, Event{Tick: st.tick, Kind: EventFell, Pos: below, From: p, Object: obj})
+		case bc.Occupant == OccupantPlayer && o.Falling && st.status == StatusPlaying:
+			// The object stops on the player; the attempt ends this tick.
+			o.Falling = false
 			st.status = StatusDead
-			return append(events, Event{Tick: st.tick, Kind: EventPlayerCrushed, Pos: below, From: p})
+			return append(events, Event{Tick: st.tick, Kind: EventPlayerCrushed, Pos: below, From: p, Object: obj})
 		case bc.Occupant.Rounded():
 			for _, d := range [...]Dir{DirLeft, DirRight} {
 				side := p.Add(d)
 				diag := side.Add(DirDown)
 				if s.initial.InBounds(diag) && st.cells[s.initial.Index(side)].Empty() && st.cells[s.initial.Index(diag)].Empty() {
-					s.moveBoulder(p, side)
-					return append(events, Event{Tick: st.tick, Kind: EventBoulderRolled, Pos: side, From: p})
+					s.moveObject(p, side)
+					return append(events, Event{Tick: st.tick, Kind: EventRolled, Pos: side, From: p, Object: obj})
 				}
 			}
 		}
 	}
-	if b.Falling {
-		b.Falling = false
-		events = append(events, Event{Tick: st.tick, Kind: EventBoulderLanded, Pos: p})
+	if o.Falling {
+		o.Falling = false
+		events = append(events, Event{Tick: st.tick, Kind: EventLanded, Pos: p, Object: obj})
 	}
 	return events
 }
 
-// moveBoulder moves the boulder at from to the empty cell to, marks it as
-// falling and as updated for the rest of this gravity step.
-func (s *Sim) moveBoulder(from, to Pos) {
-	ti := s.initial.Index(to)
-	s.st.cells[ti] = Cell{Terrain: TerrainEmpty, Occupant: OccupantBoulder, Falling: true}
-	s.st.cells[s.initial.Index(from)] = Cell{Terrain: TerrainEmpty}
+// moveObject moves the boulder or crystal at from to the empty cell to,
+// marks it as falling and as updated for the rest of this gravity step.
+func (s *Sim) moveObject(from, to Pos) {
+	fi, ti := s.initial.Index(from), s.initial.Index(to)
+	s.st.cells[ti] = Cell{Terrain: TerrainEmpty, Occupant: s.st.cells[fi].Occupant, Falling: true}
+	s.st.cells[fi] = Cell{Terrain: TerrainEmpty}
 	s.updated[ti] = true
 }
 

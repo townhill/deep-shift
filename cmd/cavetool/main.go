@@ -204,8 +204,12 @@ func runReplay(name string, override *level.Level, embedded []*level.Level, prin
 
 func describeEvent(e sim.Event) string {
 	switch e.Kind {
-	case sim.EventMoved, sim.EventBoulderFell, sim.EventBoulderRolled, sim.EventBoulderPushed, sim.EventPlayerCrushed:
+	case sim.EventMoved:
 		return fmt.Sprintf("%s->%s", e.From, e.Pos)
+	case sim.EventFell, sim.EventRolled, sim.EventBoulderPushed, sim.EventPlayerCrushed:
+		return fmt.Sprintf("%s %s->%s", e.Object, e.From, e.Pos)
+	case sim.EventLanded:
+		return fmt.Sprintf("%s %s", e.Object, e.Pos)
 	}
 	return e.Pos.String()
 }

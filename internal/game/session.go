@@ -33,9 +33,9 @@ const UpdatesPerTick = UpdatesPerSecond / sim.TicksPerSecond
 // arrives before the next move can start. Provisional.
 const SlideUpdates = 6
 
-// BoulderSlideUpdates is how long a boulder sprite glides between cells: one
-// gravity interval, so a falling boulder moves continuously.
-const BoulderSlideUpdates = sim.GravityIntervalTicks * UpdatesPerTick
+// ObjectSlideUpdates is how long a boulder or crystal sprite glides between
+// cells: one gravity interval, so a falling object moves continuously.
+const ObjectSlideUpdates = sim.GravityIntervalTicks * UpdatesPerTick
 
 // promptUpdates is how long transient HUD prompts stay visible.
 const promptUpdates = 2 * UpdatesPerSecond
@@ -82,16 +82,18 @@ type Session struct {
 
 	slideFrom, slideTo sim.Pos
 	slide              int
-	boulders           map[int]boulderSlide // gliding boulders by destination cell index
+	objects            map[int]objectSlide // gliding boulders and crystals by destination cell index
+	crushedBy          sim.Occupant
 	facing             sim.Dir
 	prompt             string
 	promptLeft         int
 	camera             Camera
 }
 
-type boulderSlide struct {
+type objectSlide struct {
 	fromX, fromY float64 // visual start, tile units
 	to           sim.Pos
+	object       sim.Occupant
 	age          int // updates since the move
 }
 
@@ -177,8 +179,10 @@ func (s *Session) tick() {
 		case sim.EventMoved:
 			s.slideFrom, s.slideTo, s.slide = e.From, e.Pos, 0
 			s.facing = in.Move
-		case sim.EventBoulderFell, sim.EventBoulderRolled, sim.EventBoulderPushed:
-			s.startBoulderSlide(e.From, e.Pos)
+		case sim.EventFell, sim.EventRolled, sim.EventBoulderPushed:
+			s.startObjectSlide(e.From, e.Pos, e.Object)
+		case sim.EventPlayerCrushed:
+			s.crushedBy = e.Object
 		case sim.EventExitSealed:
 			need := s.sim.Required() - s.sim.Collected()
 			s.setPrompt(fmt.Sprintf("Exit sealed: collect %d more %s", need, plural(need, "crystal")))
@@ -191,20 +195,20 @@ func (s *Session) tick() {
 	}
 }
 
-// startBoulderSlide begins a glide from the boulder's current visual
-// position (it may still be gliding into from) to its new cell.
-func (s *Session) startBoulderSlide(from, to sim.Pos) {
+// startObjectSlide begins a glide from the object's current visual position
+// (it may still be gliding into from) to its new cell.
+func (s *Session) startObjectSlide(from, to sim.Pos, object sim.Occupant) {
 	fi, ti := s.index(from), s.index(to)
 	fx, fy := float64(from.X), float64(from.Y)
-	if prev, ok := s.boulders[fi]; ok {
+	if prev, ok := s.objects[fi]; ok {
 		fx, fy = prev.position()
-		delete(s.boulders, fi)
+		delete(s.objects, fi)
 	}
-	s.boulders[ti] = boulderSlide{fromX: fx, fromY: fy, to: to}
+	s.objects[ti] = objectSlide{fromX: fx, fromY: fy, to: to, object: object}
 }
 
-func (b boulderSlide) position() (x, y float64) {
-	t := float64(b.age) / BoulderSlideUpdates
+func (b objectSlide) position() (x, y float64) {
+	t := float64(b.age) / ObjectSlideUpdates
 	return b.fromX + (float64(b.to.X)-b.fromX)*t, b.fromY + (float64(b.to.Y)-b.fromY)*t
 }
 
@@ -214,11 +218,11 @@ func (s *Session) advancePresentation() {
 	if s.slide < SlideUpdates {
 		s.slide++
 	}
-	for i, b := range s.boulders {
-		if b.age++; b.age >= BoulderSlideUpdates {
-			delete(s.boulders, i)
+	for i, b := range s.objects {
+		if b.age++; b.age >= ObjectSlideUpdates {
+			delete(s.objects, i)
 		} else {
-			s.boulders[i] = b
+			s.objects[i] = b
 		}
 	}
 	if s.promptLeft > 0 {
@@ -251,7 +255,8 @@ func (s *Session) resetAttempt() {
 }
 
 func (s *Session) resetPresentation() {
-	s.boulders = map[int]boulderSlide{}
+	s.objects = map[int]objectSlide{}
+	s.crushedBy = sim.OccupantNone
 	s.snap = s.sim.Snapshot()
 	s.slideFrom, s.slideTo, s.slide = s.snap.Player, s.snap.Player, SlideUpdates
 	s.facing = sim.DirNone
@@ -368,7 +373,7 @@ func (s *Session) HUD() HUD {
 	case s.snap.Status == sim.StatusDead:
 		h.Overlay = []string{
 			"CRUSHED",
-			"A falling boulder landed on you",
+			fmt.Sprintf("A falling %s landed on you", s.crushedBy),
 			"R: try again   N: next cave",
 		}
 	case s.paused:
@@ -384,27 +389,28 @@ type Frame struct {
 	PlayerX, PlayerY float64 // interpolated, tile units
 	CameraX, CameraY float64 // top-left of the view, tile units
 	Facing           sim.Dir
-	// Gliding lists boulders still sliding into their cells, in cell order;
-	// draw these at X, Y instead of at Cell.
-	Gliding []GlidingBoulder
+	// Gliding lists boulders and crystals still sliding into their cells, in
+	// cell order; draw these at X, Y instead of at Cell.
+	Gliding []GlidingObject
 	HUD     HUD
 }
 
-// GlidingBoulder is a boulder drawn between cells.
-type GlidingBoulder struct {
-	Cell sim.Pos
-	X, Y float64 // tile units
+// GlidingObject is a boulder or crystal drawn between cells.
+type GlidingObject struct {
+	Cell   sim.Pos
+	X, Y   float64 // tile units
+	Object sim.Occupant
 }
 
 // Frame returns the current view model.
 func (s *Session) Frame() Frame {
 	px, py := s.PlayerPosition()
-	var gliding []GlidingBoulder
-	for _, b := range s.boulders {
+	var gliding []GlidingObject
+	for _, b := range s.objects {
 		x, y := b.position()
-		gliding = append(gliding, GlidingBoulder{Cell: b.to, X: x, Y: y})
+		gliding = append(gliding, GlidingObject{Cell: b.to, X: x, Y: y, Object: b.object})
 	}
-	slices.SortFunc(gliding, func(a, b GlidingBoulder) int {
+	slices.SortFunc(gliding, func(a, b GlidingObject) int {
 		return cmp.Or(cmp.Compare(a.Cell.Y, b.Cell.Y), cmp.Compare(a.Cell.X, b.Cell.X))
 	})
 	return Frame{

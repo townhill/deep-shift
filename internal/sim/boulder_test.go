@@ -33,15 +33,15 @@ func TestBoulderFallsOneCellPerGravityStep(t *testing.T) {
 			t.Fatalf("after tick %d: boulder not at (0,%d):\n%s", tick, y, s.ASCII())
 		}
 		for _, e := range ev {
-			if e.Kind == EventBoulderFell && (e.Pos.X != e.From.X || e.Pos.Y != e.From.Y+1) {
+			if e.Kind == EventFell && (e.Pos.X != e.From.X || e.Pos.Y != e.From.Y+1) {
 				t.Fatalf("tick %d: fall %v skipped or slid", tick, e)
 			}
-			if e.Kind == EventBoulderFell && tick%GravityIntervalTicks != 0 {
+			if e.Kind == EventFell && tick%GravityIntervalTicks != 0 {
 				t.Fatalf("tick %d: fell outside a gravity tick", tick)
 			}
 		}
 		if tick == 6 {
-			wantKinds(t, ev, EventBoulderLanded)
+			wantKinds(t, ev, EventLanded)
 		}
 	}
 	if s.Cell(Pos{0, 3}).Falling {
@@ -100,7 +100,7 @@ func TestRollingCriteriaAndTieBreak(t *testing.T) {
 				t.Fatalf("top boulder not at %s after one gravity step:\n%s", tt.want, s.ASCII())
 			}
 			if rolled := tt.want.X != indexOfO(tt.rows[0]); rolled {
-				wantKinds(t, ev, EventBoulderRolled)
+				wantKinds(t, ev, EventRolled)
 				if !s.Cell(tt.want).Falling {
 					t.Fatal("a rolled boulder must be marked falling")
 				}
@@ -122,17 +122,17 @@ func TestRolledBoulderFallsNextStep(t *testing.T) {
 		"  #   ",
 		"######",
 	)
-	wantKinds(t, s.Step(Input{}), EventBoulderRolled) // tick 0: (2,0) -> (1,0)
-	wantKinds(t, s.Step(Input{}))                     // tick 1: no gravity
-	ev := s.Step(Input{})                             // tick 2: falls to (1,1)
-	wantKinds(t, ev, EventBoulderFell)
+	wantKinds(t, s.Step(Input{}), EventRolled) // tick 0: (2,0) -> (1,0)
+	wantKinds(t, s.Step(Input{}))              // tick 1: no gravity
+	ev := s.Step(Input{})                      // tick 2: falls to (1,1)
+	wantKinds(t, ev, EventFell)
 	if ev[0].From != (Pos{1, 0}) || ev[0].Pos != (Pos{1, 1}) {
 		t.Fatalf("fall = %v", ev[0])
 	}
 	idle(s, 1)
-	wantKinds(t, s.Step(Input{}), EventBoulderFell) // tick 4: (1,1) -> (1,2)
+	wantKinds(t, s.Step(Input{}), EventFell) // tick 4: (1,1) -> (1,2)
 	idle(s, 1)
-	wantKinds(t, s.Step(Input{}), EventBoulderLanded) // tick 6: on the wall
+	wantKinds(t, s.Step(Input{}), EventLanded) // tick 6: on the wall
 }
 
 // SPEC §11 Phase 2: each rock updates at most once per physics tick. A
@@ -146,7 +146,7 @@ func TestBoulderUpdatesAtMostOncePerStep(t *testing.T) {
 		"#####",
 	)
 	ev := s.Step(Input{})
-	wantKinds(t, ev, EventBoulderRolled)
+	wantKinds(t, ev, EventRolled)
 	if !boulderAt(s, Pos{2, 0}) || boulderAt(s, Pos{2, 1}) {
 		t.Fatalf("rolled boulder moved twice in one step:\n%s", s.ASCII())
 	}
@@ -162,7 +162,7 @@ func TestStackFallsTogetherOneCellEach(t *testing.T) {
 		"##",
 	)
 	ev := s.Step(Input{})
-	wantKinds(t, ev, EventBoulderFell, EventBoulderFell, EventBoulderFell)
+	wantKinds(t, ev, EventFell, EventFell, EventFell)
 	for i, e := range ev {
 		if e.Pos.Y != e.From.Y+1 {
 			t.Fatalf("event %d moved more than one cell: %v", i, e)
@@ -225,7 +225,7 @@ func TestFallingBoulderCannotBePushed(t *testing.T) {
 		t.Fatal(err)
 	}
 	ev := s.Step(Input{Move: DirRight}) // push refused; gravity then lands it
-	wantKinds(t, ev, EventBoulderLanded)
+	wantKinds(t, ev, EventLanded)
 	if s.Player() != (Pos{0, 0}) {
 		t.Fatal("pushed a falling boulder")
 	}
@@ -238,7 +238,7 @@ func TestPushedBoulderFallsOnTheNextGravityStep(t *testing.T) {
 	s := newSim(t, 0, "@O ", "## ", "###")
 	wantKinds(t, s.Step(Input{Move: DirRight}), EventMoved, EventBoulderPushed) // tick 0
 	wantKinds(t, s.Step(Input{}))                                               // tick 1
-	wantKinds(t, s.Step(Input{}), EventBoulderFell)                             // tick 2
+	wantKinds(t, s.Step(Input{}), EventFell)                                    // tick 2
 	if !boulderAt(s, Pos{2, 1}) {
 		t.Fatalf("pushed boulder did not fall:\n%s", s.ASCII())
 	}
@@ -339,5 +339,87 @@ func TestBoulderCaveValidation(t *testing.T) {
 	c.Cells[1] = Cell{Terrain: TerrainEarth, Occupant: OccupantBoulder}
 	if _, err := New(c, 0); err == nil {
 		t.Fatal("accepted a boulder embedded in earth")
+	}
+}
+
+// Crystals obey the same gravity as boulders (owner decision, D-019).
+func TestCrystalFallsLikeABoulder(t *testing.T) {
+	s := newSim(t, 0,
+		"*@",
+		"  ",
+		"  ",
+		"##",
+	)
+	ev := s.Step(Input{})
+	wantKinds(t, ev, EventFell)
+	if ev[0].Object != OccupantCrystal || ev[0].Pos != (Pos{0, 1}) {
+		t.Fatalf("fall = %v", ev[0])
+	}
+	idle(s, 1)
+	wantKinds(t, s.Step(Input{}), EventFell)
+	idle(s, 1)
+	ev = s.Step(Input{})
+	wantKinds(t, ev, EventLanded)
+	if s.Cell(Pos{0, 2}).Occupant != OccupantCrystal || s.Cell(Pos{0, 2}).Falling {
+		t.Fatalf("crystal did not land at (0,2):\n%s", s.ASCII())
+	}
+}
+
+func TestCrystalRollsOffRoundedObjects(t *testing.T) {
+	s := newSim(t, 0,
+		"  *  @",
+		"  O   ",
+		"  #   ",
+		"######",
+	)
+	ev := s.Step(Input{})
+	wantKinds(t, ev, EventRolled)
+	if ev[0].Object != OccupantCrystal || ev[0].Pos != (Pos{1, 0}) {
+		t.Fatalf("roll = %v", ev[0])
+	}
+}
+
+func TestFallingCrystalCrushesThePlayer(t *testing.T) {
+	s := newSim(t, 0, "* ", "  ", "@ ", "##")
+	var crush []Event
+	for _, e := range idle(s, 4) {
+		if e.Kind == EventPlayerCrushed {
+			crush = append(crush, e)
+		}
+	}
+	if len(crush) != 1 || crush[0].Object != OccupantCrystal || s.Status() != StatusDead {
+		t.Fatalf("crush events %v, status %s", crush, s.Status())
+	}
+}
+
+func TestWalkingIntoAFallingCrystalCollectsIt(t *testing.T) {
+	s := newSim(t, 1,
+		" *",
+		"@ ",
+		"  ",
+		"  ",
+		"##",
+	)
+	wantKinds(t, s.Step(Input{}), EventFell) // tick 0: crystal falls beside the player
+	if !s.Cell(Pos{1, 1}).Falling {
+		t.Fatal("crystal should be falling")
+	}
+	wantKinds(t, s.Step(Input{Move: DirRight}), EventMoved, EventCollected)
+	if s.Collected() != 1 || s.Status() != StatusPlaying || s.Cell(Pos{1, 1}).Falling {
+		t.Fatalf("collected %d, status %s, player cell %+v", s.Collected(), s.Status(), s.Cell(Pos{1, 1}))
+	}
+}
+
+// Only objects on open floor fall. A crystal embedded in earth (possible in
+// hand-built caves, not in level files) stays until dug out.
+func TestObjectEmbeddedInEarthDoesNotFall(t *testing.T) {
+	c := caveFromRows(t, 0, "@.", "  ")
+	c.Cells[1].Occupant = OccupantCrystal
+	s, err := New(c, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ev := idle(s, 6); len(ev) != 0 || s.Cell(Pos{1, 0}).Occupant != OccupantCrystal {
+		t.Fatalf("embedded crystal moved: %v\n%s", ev, s.ASCII())
 	}
 }
