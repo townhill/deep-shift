@@ -77,19 +77,24 @@ func TestStateHashIsSensitiveToEveryStateComponent(t *testing.T) {
 	add("open gate", s)
 	s.initial.Mechanisms = []Mechanism{{Valve: Pos{2, 1}, Gates: []Pos{{3, 1}}}}
 	add("open gate linked to a valve", s)
+	s = base(1)
+	s.st.cells[s.Cave().Index(Pos{3, 1})] = Cell{Occupant: OccupantCrawler, Facing: DirUp}
+	add("crawler facing up", s)
+	s.st.cells[s.Cave().Index(Pos{3, 1})].Facing = DirLeft
+	add("crawler facing left", s)
 }
 
 // Golden hashes pin the hash byte layout. If this test fails, the encoding or
 // a rule changed: bump RuleVersion or the hash magic deliberately, document
 // it, and review every replay fixture rather than regenerating blindly.
-// Last re-pinned for rule version 3 / hash layout v3 (water byte per cell,
-// mechanism links); see docs/DECISIONS.md D-030.
+// Last re-pinned for rule version 4 / hash layout v4 (facing byte per cell);
+// see docs/DECISIONS.md D-040.
 func TestStateHashGolden(t *testing.T) {
 	s, err := New(caveFromRows(t, 1, "#####", "#@.*E", "#####"), 42)
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantStart = "e5357ece5bc5563c4322d50fcd36d23bbfd8714a94d80e991d50e3134ccbd146"
+	const wantStart = "e442f162897fdb68ea4810efcdaeb248d05203ba071bdae67fe4ac37fcb60fd0"
 	if got := s.StateHash().String(); got != wantStart {
 		t.Errorf("tick 0 hash = %s, want %s", got, wantStart)
 	}
@@ -99,15 +104,16 @@ func TestStateHashGolden(t *testing.T) {
 	if s.Status() != StatusComplete {
 		t.Fatalf("status = %s, want complete", s.Status())
 	}
-	const wantEnd = "01fcc7c99ab91f3edb65cea2d512cbbe82852f6320b425e832614ad113342722"
+	const wantEnd = "8773610fd32cba96ff9c7fe68cd9e6424fcb3932391b30a413cd122d4652d0aa"
 	if got := s.StateHash().String(); got != wantEnd {
 		t.Errorf("completed hash = %s, want %s", got, wantEnd)
 	}
 }
 
 // randomCave builds a bordered cave from rng with exactly one player, one
-// exit, water, and two valves (one beside the player start) each linked to
-// a few gates. It is test-only and makes no solvability promise.
+// exit, water, crawlers (none within three cells of the player start), and
+// two valves (one beside the player start) each linked to a few gates. It is
+// test-only and makes no solvability promise.
 func randomCave(rng *SplitMix64, w, h int) Cave {
 	c := Cave{Width: w, Height: h, Cells: make([]Cell, w*h)}
 	for y := range h {
@@ -128,6 +134,10 @@ func randomCave(rng *SplitMix64, w, h int) Cave {
 				cell.Occupant = OccupantBoulder
 			case r < 18:
 				cell.Water = uint8(1 + rng.Intn(WaterCapacity))
+			case r == 18 && x+y > 5:
+				// No extra draw, so the rest of the cave matches the
+				// pre-crawler layout for the same seed.
+				cell.Occupant, cell.Facing = OccupantCrawler, Dir(1+(x+y)%4)
 			}
 		}
 	}
@@ -162,6 +172,12 @@ func randomCave(rng *SplitMix64, w, h int) Cave {
 func checkInvariants(s *Sim, initialCrystals, initialBoulders, lastCollected, initialWater int) error {
 	players := 0
 	for i, c := range s.st.cells {
+		if (c.Occupant == OccupantCrawler) != (c.Facing != DirNone) || c.Facing > DirRight {
+			return fmt.Errorf("%s facing %s at index %d", c.Occupant, c.Facing, i)
+		}
+		if c.Occupant == OccupantCrawler && (!c.Terrain.Floor() || c.Water > 0) {
+			return fmt.Errorf("crawler on %s terrain with %d water at index %d", c.Terrain, c.Water, i)
+		}
 		if c.Falling && !c.Occupant.Falls() {
 			return fmt.Errorf("falling flag on %s at index %d", c.Occupant, i)
 		}
@@ -218,10 +234,11 @@ func checkInvariants(s *Sim, initialCrystals, initialBoulders, lastCollected, in
 	return nil
 }
 
-// checkMoveEvents verifies one tick's object movement: falls go exactly one
-// cell down, rolls and pushes one cell sideways, and no object moves twice
-// (no move starts where an earlier move in the same tick ended, and no two
-// moves share a start or an end).
+// checkMoveEvents verifies one tick's object and crawler movement: falls go
+// exactly one cell down, rolls and pushes one cell sideways, crawlers one
+// cell in any direction, and nothing moves twice (no move starts where an
+// earlier move in the same tick ended, and no two moves share a start or an
+// end).
 func checkMoveEvents(events []Event) error {
 	starts, ends := map[Pos]bool{}, map[Pos]bool{}
 	for _, e := range events {
@@ -233,6 +250,11 @@ func checkMoveEvents(events []Event) error {
 			dx, dy = e.Pos.X-e.From.X, 0
 			if dx != 1 && dx != -1 {
 				return fmt.Errorf("%v is not one cell sideways", e)
+			}
+		case EventCrawlerMoved:
+			dx, dy = e.Pos.X-e.From.X, e.Pos.Y-e.From.Y
+			if dx*dx+dy*dy != 1 {
+				return fmt.Errorf("%v is not one cell", e)
 			}
 		default:
 			continue
@@ -266,6 +288,8 @@ func TestRandomisedRunsKeepInvariantsAndDeterminism(t *testing.T) {
 			initialWater := a.Water()
 			inputRNG := NewSplitMix64(seed ^ 0xdeadbeef)
 			lastCollected, turns := 0, 0
+			crawlers := a.Crawlers()
+			seen := map[EventKind]int{}
 			for tick := range ticks {
 				// One input in six is Interact, so valves near the player's
 				// path get turned both ways.
@@ -274,9 +298,20 @@ func TestRandomisedRunsKeepInvariantsAndDeterminism(t *testing.T) {
 				ev := a.Step(in)
 				b.Step(in)
 				for _, e := range ev {
-					if e.Kind == EventValveTurned {
+					seen[e.Kind]++
+					switch e.Kind {
+					case EventValveTurned:
 						turns++
+					case EventCrawlerCrushed, EventCrawlerDrowned:
+						crawlers--
+					case EventPlayerCaught:
+						if a.Status() != StatusDead {
+							t.Fatalf("seed %d tick %d: caught but %s", seed, tick, a.Status())
+						}
 					}
+				}
+				if a.Crawlers() != crawlers {
+					t.Fatalf("seed %d tick %d: %d crawlers, want %d after removals\n%s", seed, tick, a.Crawlers(), crawlers, a.ASCII())
 				}
 				if err := checkMoveEvents(ev); err != nil {
 					t.Fatalf("seed %d tick %d: %v\n%s", seed, tick, err, a.ASCII())
@@ -289,7 +324,8 @@ func TestRandomisedRunsKeepInvariantsAndDeterminism(t *testing.T) {
 					t.Fatalf("seed %d tick %d: identical runs diverged", seed, tick)
 				}
 			}
-			t.Logf("seed %d: %d valve turns, %d water units, final status %s", seed, turns, initialWater, a.Status())
+			t.Logf("seed %d: %d valve turns, %d water units, %d crawler moves, %d crushed, %d drowned, final status %s at tick %d",
+				seed, turns, initialWater, seen[EventCrawlerMoved], seen[EventCrawlerCrushed], seen[EventCrawlerDrowned], a.Status(), a.Tick())
 		})
 	}
 }

@@ -4,17 +4,18 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // caveFromRows builds a Cave from rows written in the shared symbol legend.
 func caveFromRows(t testing.TB, required int, rows ...string) Cave {
 	t.Helper()
-	c := Cave{Width: len(rows[0]), Height: len(rows), RequiredCrystals: required}
+	c := Cave{Width: utf8.RuneCountInString(rows[0]), Height: len(rows), RequiredCrystals: required}
 	for y, row := range rows {
-		if len(row) != c.Width {
-			t.Fatalf("row %d has %d symbols, want %d", y, len(row), c.Width)
+		if n := utf8.RuneCountInString(row); n != c.Width {
+			t.Fatalf("row %d has %d symbols, want %d", y, n, c.Width)
 		}
-		for x, r := range row {
+		for x, r := range []rune(row) {
 			cell, ok := CellForSymbol(r)
 			if !ok {
 				t.Fatalf("row %d col %d: unknown symbol %q", y, x, r)

@@ -9,7 +9,7 @@ type Sim struct {
 	seed    uint64
 	exits   []Pos // exit cells in row-major order; terrain never changes
 	st      state
-	updated []bool  // gravity scratch: cells whose object already moved this step
+	updated []bool  // gravity and crawler scratch: cells whose occupant already moved this step
 	pushed  int     // index of the boulder pushed this tick, or -1
 	level   []uint8 // water scratch: levels the spread is computed from
 }
@@ -75,7 +75,11 @@ func (s *Sim) Step(in Input) []Event {
 	if s.st.status == StatusPlaying {
 		if s.st.tick%GravityIntervalTicks == 0 {
 			events = s.stepGravity(events)
+			if s.st.tick%CrawlerIntervalTicks == 0 {
+				events = s.stepCrawlers(events)
+			}
 			s.stepWater()
+			events = s.drownCrawlers(events)
 		}
 		if s.st.status == StatusPlaying {
 			events = s.stepQuota(events)
@@ -116,6 +120,11 @@ func (s *Sim) stepPlayer(in Input, events []Event) []Event {
 	}
 	if dst.Deep() {
 		return append(events, Event{Tick: st.tick, Kind: EventTooDeep, Pos: to})
+	}
+	if dst.Occupant == OccupantCrawler {
+		// Walking into a crawler is fatal; the player does not move.
+		st.status = StatusDead
+		return append(events, Event{Tick: st.tick, Kind: EventPlayerCaught, Pos: st.player, From: to})
 	}
 
 	// A boulder can only be pushed: horizontally, while resting, one cell into
@@ -213,6 +222,14 @@ func (s *Sim) updateFalling(p Pos, events []Event) []Event {
 			o.Falling = false
 			st.status = StatusDead
 			return append(events, Event{Tick: st.tick, Kind: EventPlayerCrushed, Pos: below, From: p, Object: obj})
+		case bc.Occupant == OccupantCrawler && o.Falling:
+			// A falling object crushes a crawler and falls on into its cell.
+			c := &st.cells[s.initial.Index(below)]
+			c.Occupant, c.Facing = OccupantNone, DirNone
+			s.moveObject(p, below)
+			return append(events,
+				Event{Tick: st.tick, Kind: EventCrawlerCrushed, Pos: below, From: p, Object: obj},
+				Event{Tick: st.tick, Kind: EventFell, Pos: below, From: p, Object: obj})
 		case bc.Occupant.Rounded():
 			for _, d := range [...]Dir{DirLeft, DirRight} {
 				side := p.Add(d)
@@ -227,6 +244,74 @@ func (s *Sim) updateFalling(p Pos, events []Event) []Event {
 	if o.Falling {
 		o.Falling = false
 		events = append(events, Event{Tick: st.tick, Kind: EventLanded, Pos: p, Object: obj})
+	}
+	return events
+}
+
+// stepCrawlers is the crawler phase, after gravity on CrawlerIntervalTicks
+// ticks. Crawlers are scanned row by row from the top, each row left to
+// right, and each moves at most once: a cell a crawler moved into is skipped
+// if the scan reaches it again.
+//
+// A crawler follows the wall on its left: it tries the directions left of
+// its facing, ahead, right and behind, in that order, and takes the first
+// that is open to it (see Cell.OpenToCrawler). If that cell holds the player,
+// it catches them instead of moving. With every direction blocked it stays.
+func (s *Sim) stepCrawlers(events []Event) []Event {
+	clear(s.updated)
+	w := s.initial.Width
+	for i := range s.st.cells {
+		if s.st.cells[i].Occupant != OccupantCrawler || s.updated[i] || s.st.status != StatusPlaying {
+			continue
+		}
+		events = s.updateCrawler(Pos{i % w, i / w}, events)
+	}
+	return events
+}
+
+// turns lists, for each facing, the directions a crawler tries: its left,
+// ahead, its right, behind.
+var turns = [...][4]Dir{
+	DirUp:    {DirLeft, DirUp, DirRight, DirDown},
+	DirDown:  {DirRight, DirDown, DirLeft, DirUp},
+	DirLeft:  {DirDown, DirLeft, DirUp, DirRight},
+	DirRight: {DirUp, DirRight, DirDown, DirLeft},
+}
+
+func (s *Sim) updateCrawler(p Pos, events []Event) []Event {
+	st := &s.st
+	c := &st.cells[s.initial.Index(p)]
+	for _, d := range turns[c.Facing] {
+		to := p.Add(d)
+		if !s.initial.InBounds(to) {
+			continue
+		}
+		dst := &st.cells[s.initial.Index(to)]
+		if !dst.OpenToCrawler() {
+			continue
+		}
+		c.Facing = d
+		if dst.Occupant == OccupantPlayer {
+			st.status = StatusDead
+			return append(events, Event{Tick: st.tick, Kind: EventPlayerCaught, Pos: to, From: p})
+		}
+		dst.Occupant, dst.Facing = OccupantCrawler, d
+		c.Occupant, c.Facing = OccupantNone, DirNone
+		s.updated[s.initial.Index(to)] = true
+		return append(events, Event{Tick: st.tick, Kind: EventCrawlerMoved, Pos: to, From: p, Object: OccupantCrawler})
+	}
+	return events
+}
+
+// drownCrawlers removes every crawler whose cell holds water after the water
+// phase, in row-major order.
+func (s *Sim) drownCrawlers(events []Event) []Event {
+	w := s.initial.Width
+	for i := range s.st.cells {
+		if c := &s.st.cells[i]; c.Occupant == OccupantCrawler && c.Water > 0 {
+			c.Occupant, c.Facing = OccupantNone, DirNone
+			events = append(events, Event{Tick: s.st.tick, Kind: EventCrawlerDrowned, Pos: Pos{i % w, i / w}})
+		}
 	}
 	return events
 }
@@ -382,6 +467,17 @@ func (s *Sim) Collected() int { return s.st.collected }
 
 // Required returns the crystal quota.
 func (s *Sim) Required() int { return s.initial.RequiredCrystals }
+
+// Crawlers returns the number of crawlers in the cave.
+func (s *Sim) Crawlers() int {
+	n := 0
+	for _, c := range s.st.cells {
+		if c.Occupant == OccupantCrawler {
+			n++
+		}
+	}
+	return n
+}
 
 // Boulders returns the number of boulders in the cave.
 func (s *Sim) Boulders() int {

@@ -8,22 +8,26 @@ type EventKind uint8
 
 // Event kinds.
 const (
-	EventMoved         EventKind = iota + 1 // player moved; Pos is the destination
-	EventDug                                // earth removed; Pos is the dug cell
-	EventCollected                          // crystal collected; Pos is its cell
-	EventExitOpened                         // quota met; Pos is the exit cell
-	EventExitSealed                         // player bumped a sealed exit; Pos is the exit cell
-	EventCaveComplete                       // player entered the open exit; Pos is the exit cell
-	EventFell                               // Object moved down one cell; From → Pos
-	EventRolled                             // Object moved sideways off a rounded blocker; From → Pos
-	EventLanded                             // falling Object came to rest at Pos
-	EventBoulderPushed                      // the player pushed a boulder; From → Pos
-	EventPlayerCrushed                      // falling Object at From crushed the player at Pos
-	EventTooDeep                            // player bumped deep water at Pos
-	EventValveTurned                        // the player turned the valve at Pos
-	EventGateOpened                         // the gate at Pos opened
-	EventGateClosed                         // the gate at Pos closed
-	EventGateJammed                         // closing failed: the gate at Pos is not clear
+	EventMoved          EventKind = iota + 1 // player moved; Pos is the destination
+	EventDug                                 // earth removed; Pos is the dug cell
+	EventCollected                           // crystal collected; Pos is its cell
+	EventExitOpened                          // quota met; Pos is the exit cell
+	EventExitSealed                          // player bumped a sealed exit; Pos is the exit cell
+	EventCaveComplete                        // player entered the open exit; Pos is the exit cell
+	EventFell                                // Object moved down one cell; From → Pos
+	EventRolled                              // Object moved sideways off a rounded blocker; From → Pos
+	EventLanded                              // falling Object came to rest at Pos
+	EventBoulderPushed                       // the player pushed a boulder; From → Pos
+	EventPlayerCrushed                       // falling Object at From crushed the player at Pos
+	EventTooDeep                             // player bumped deep water at Pos
+	EventValveTurned                         // the player turned the valve at Pos
+	EventGateOpened                          // the gate at Pos opened
+	EventGateClosed                          // the gate at Pos closed
+	EventGateJammed                          // closing failed: the gate at Pos is not clear
+	EventCrawlerMoved                        // a crawler moved; From → Pos
+	EventPlayerCaught                        // the crawler at From caught the player at Pos
+	EventCrawlerCrushed                      // falling Object at From crushed the crawler at Pos
+	EventCrawlerDrowned                      // water reached the crawler at Pos
 )
 
 func (k EventKind) String() string {
@@ -60,6 +64,14 @@ func (k EventKind) String() string {
 		return "gate-closed"
 	case EventGateJammed:
 		return "gate-jammed"
+	case EventCrawlerMoved:
+		return "crawler-moved"
+	case EventPlayerCaught:
+		return "player-caught"
+	case EventCrawlerCrushed:
+		return "crawler-crushed"
+	case EventCrawlerDrowned:
+		return "crawler-drowned"
 	}
 	return fmt.Sprintf("event(%d)", uint8(k))
 }
@@ -82,8 +94,10 @@ func (e Event) String() string {
 	switch e.Kind {
 	case EventMoved:
 		return fmt.Sprintf("t%d %s %s->%s", e.Tick, e.Kind, e.From, e.Pos)
-	case EventFell, EventRolled, EventBoulderPushed, EventPlayerCrushed:
+	case EventFell, EventRolled, EventBoulderPushed, EventPlayerCrushed, EventCrawlerCrushed:
 		return fmt.Sprintf("t%d %s %s %s->%s", e.Tick, e.Kind, e.Object, e.From, e.Pos)
+	case EventCrawlerMoved, EventPlayerCaught:
+		return fmt.Sprintf("t%d %s %s->%s", e.Tick, e.Kind, e.From, e.Pos)
 	case EventLanded:
 		return fmt.Sprintf("t%d %s %s %s", e.Tick, e.Kind, e.Object, e.Pos)
 	}

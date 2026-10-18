@@ -85,6 +85,14 @@ func (c *Cave) Validate() error {
 			errs = append(errs, fmt.Errorf("cell %s: only boulders and crystals can be falling", p))
 		}
 		switch {
+		case cell.Occupant == OccupantCrawler && (cell.Facing < DirUp || cell.Facing > DirRight):
+			errs = append(errs, fmt.Errorf("cell %s: a crawler must face up, down, left or right", p))
+		case cell.Occupant != OccupantCrawler && cell.Facing != DirNone:
+			errs = append(errs, fmt.Errorf("cell %s: only crawlers have a facing", p))
+		case cell.Occupant == OccupantCrawler && cell.Water > 0:
+			errs = append(errs, fmt.Errorf("cell %s: a crawler cannot start in water", p))
+		}
+		switch {
 		case cell.Water > WaterCapacity:
 			errs = append(errs, fmt.Errorf("cell %s: water %d exceeds the capacity %d", p, cell.Water, WaterCapacity))
 		case cell.Water > 0 && !cell.HoldsWater():
@@ -93,8 +101,8 @@ func (c *Cave) Validate() error {
 		if cell.Occupant == OccupantNone {
 			continue
 		}
-		if cell.Occupant == OccupantBoulder && cell.Terrain == TerrainEarth {
-			errs = append(errs, fmt.Errorf("cell %s: a boulder cannot be embedded in earth", p))
+		if (cell.Occupant == OccupantBoulder || cell.Occupant == OccupantCrawler) && cell.Terrain == TerrainEarth {
+			errs = append(errs, fmt.Errorf("cell %s: a %s cannot be embedded in earth", p, cell.Occupant))
 		}
 		switch cell.Terrain {
 		case TerrainWall, TerrainGateClosed, TerrainValveShut, TerrainValveOpen:
