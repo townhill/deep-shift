@@ -2,6 +2,7 @@ package replay
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -133,7 +134,10 @@ func TestRunRejectsMismatchedContext(t *testing.T) {
 	}{
 		{"other cave", func(r *Replay) { r.CaveID = "other" }, `replay is for cave "other"`},
 		{"cave edited", func(r *Replay) { r.CaveChecksum = strings.Repeat("0", 64) }, "has changed since the replay was recorded"},
-		{"future rules", func(r *Replay) { r.RuleVersion = sim.RuleVersion + 1 }, "rule version 2; this build implements rule version 1"},
+		{"future rules", func(r *Replay) { r.RuleVersion = sim.RuleVersion + 1 },
+			fmt.Sprintf("rule version %d; this build implements rule version %d", sim.RuleVersion+1, sim.RuleVersion)},
+		{"older rules", func(r *Replay) { r.RuleVersion = 1 },
+			fmt.Sprintf("rule version 1; this build implements rule version %d", sim.RuleVersion)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

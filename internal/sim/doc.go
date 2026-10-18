@@ -23,13 +23,17 @@
 // A fresh or Reset simulation is at tick 0. Step applies the Input for the
 // current tick T, then the tick becomes T+1. "The hash at tick N" means the
 // hash after N Steps. Once the cave is complete, Step is a no-op and the tick
-// counter stops advancing.
+// counter stops advancing. The same holds once the player is dead.
 //
-// # Update order (rule version 1)
+// # Update order (rule version 2)
 //
-//  1. Player phase: movement cooldown, then the move (dig, collect, exit).
-//  2. World phase: quota check, which may open the exit.
-//  3. Tick counter increments.
+//  1. Player phase: movement cooldown, then the move (dig, collect, push,
+//     exit). Entering the open exit ends the tick's updates.
+//  2. Gravity phase, on ticks that are multiples of GravityIntervalTicks:
+//     boulders fall, roll, land or crush, scanned bottom-to-top and
+//     left-to-right, each boulder at most once.
+//  3. Quota check, which may open the exit (skipped if the player died).
+//  4. Tick counter increments.
 //
 // docs/PHYSICS.md is the human-readable rules reference and must be kept in
 // step with this package.

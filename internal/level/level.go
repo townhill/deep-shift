@@ -1,9 +1,9 @@
 // Package level reads, validates and fingerprints authored cave files.
 //
-// Format version 1 is JSON with these fields (all required except metadata):
+// Cave files are JSON with these fields (all required except metadata):
 //
 //	{
-//	  "format_version": 1,
+//	  "format_version": 2,          // 1 or 2; see below
 //	  "id": "test_cave",            // ^[a-z0-9][a-z0-9_]*$, at most 64 bytes
 //	  "title": "Proving Ground",    // shown in the HUD, at most 80 characters
 //	  "width": 40, "height": 24,    // 1..256 each
@@ -14,6 +14,8 @@
 //	}
 //
 // Row symbols are the shared legend in internal/sim (sim.SymbolLegend).
+// Version 2 adds the boulder 'O'; version 1 files are still read unchanged
+// and may not contain it.
 // Each cave must contain exactly one player start '@' and exactly one exit
 // 'E'. Unknown fields are rejected so typos surface instead of being ignored.
 package level
@@ -37,8 +39,15 @@ import (
 	"github.com/townhill/deep-shift/internal/sim"
 )
 
-// FormatVersion is the only cave file version this build reads.
-const FormatVersion = 1
+// FormatVersion is the newest cave file version this build reads; new caves
+// should use it.
+const FormatVersion = 2
+
+// MinFormatVersion is the oldest cave file version this build still reads.
+const MinFormatVersion = 1
+
+// boulderFormatVersion is the first version whose rows may contain boulders.
+const boulderFormatVersion = 2
 
 // MaxSeed is the largest seed accepted: 2^53-1, the largest integer every
 // JSON implementation (including float64-based ones) round-trips exactly.
@@ -158,8 +167,8 @@ func Parse(source string, data []byte) (*Level, error) {
 	}
 	if len(unknown) > 0 {
 		slices.Sort(unknown)
-		return nil, fmt.Errorf("%s: unknown field(s) %s; format version %d fields are %s",
-			source, strings.Join(unknown, ", "), FormatVersion, strings.Join(fields, ", "))
+		return nil, fmt.Errorf("%s: unknown field(s) %s; cave file fields are %s",
+			source, strings.Join(unknown, ", "), strings.Join(fields, ", "))
 	}
 
 	var f file
@@ -269,10 +278,10 @@ func validate(source string, f *file) (*Level, error) {
 	// The version decides how everything else is read, so stop early.
 	switch {
 	case f.FormatVersion == nil:
-		add("format_version", "missing; this build reads format_version %d", FormatVersion)
+		add("format_version", "missing; this build reads format_version %d to %d", MinFormatVersion, FormatVersion)
 		return nil, v
-	case *f.FormatVersion != FormatVersion:
-		add("format_version", "unsupported version %d; this build reads format_version %d", *f.FormatVersion, FormatVersion)
+	case *f.FormatVersion < MinFormatVersion || *f.FormatVersion > FormatVersion:
+		add("format_version", "unsupported version %d; this build reads format_version %d to %d", *f.FormatVersion, MinFormatVersion, FormatVersion)
 		return nil, v
 	}
 	l := &Level{FormatVersion: *f.FormatVersion, Rows: f.Rows, Metadata: f.Metadata}
@@ -370,12 +379,16 @@ func validateRows(rows []string, l *Level, add func(field, format string, args .
 			gridOK = false
 			continue
 		}
-		var unknown []string
+		var unknown, tooNew []string
 		x := 0
 		for _, r := range row {
 			cell, ok := sim.CellForSymbol(r)
 			if !ok {
 				unknown = append(unknown, fmt.Sprintf("%q at x=%d", r, x))
+				gridOK = false
+			}
+			if r == sim.SymbolBoulder && l.FormatVersion < boulderFormatVersion {
+				tooNew = append(tooNew, fmt.Sprintf("x=%d", x))
 				gridOK = false
 			}
 			switch r {
@@ -391,6 +404,10 @@ func validateRows(rows []string, l *Level, add func(field, format string, args .
 		}
 		if len(unknown) > 0 {
 			add(field, "unknown tile symbol(s) %s; valid symbols are %s", elide(unknown), sim.SymbolLegend)
+		}
+		if len(tooNew) > 0 {
+			add(field, "boulder(s) '%c' at %s need format_version %d or later (this file is version %d)",
+				sim.SymbolBoulder, elide(tooNew), boulderFormatVersion, l.FormatVersion)
 		}
 	}
 	countCheck := func(name string, sym rune, found []sim.Pos) {

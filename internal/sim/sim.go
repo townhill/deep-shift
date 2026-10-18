@@ -7,8 +7,10 @@ import "fmt"
 type Sim struct {
 	initial Cave // immutable copy of the starting layout
 	seed    uint64
-	exits   []Pos // exit cells in row-major order; terrain never changes in v1
+	exits   []Pos // exit cells in row-major order; terrain never changes
 	st      state
+	updated []bool // gravity scratch: cells whose boulder already moved this step
+	pushed  int    // index of the boulder pushed this tick, or -1
 }
 
 // state is everything Reset restores. Every field must be covered by
@@ -30,7 +32,7 @@ func New(c Cave, seed uint64) (*Sim, error) {
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("sim: invalid cave: %w", err)
 	}
-	s := &Sim{initial: c.Clone(), seed: seed}
+	s := &Sim{initial: c.Clone(), seed: seed, updated: make([]bool, len(c.Cells))}
 	for i, cell := range s.initial.Cells {
 		if cell.Terrain == TerrainExit {
 			s.exits = append(s.exits, Pos{i % c.Width, i / c.Width})
@@ -59,14 +61,24 @@ func (s *Sim) Reset() {
 
 // Step advances the simulation by exactly one logical tick using in, and
 // returns the events produced during that tick in a deterministic order.
-// After the cave is complete Step does nothing and returns nil.
+// Once the cave is complete or the player is dead, Step does nothing and
+// returns nil.
 func (s *Sim) Step(in Input) []Event {
 	if s.st.status != StatusPlaying {
 		return nil
 	}
 	var events []Event
+	s.pushed = -1
 	events = s.stepPlayer(in, events)
-	events = s.stepQuota(events)
+	// Entering the exit ends the cave at once: the world phase is skipped.
+	if s.st.status == StatusPlaying {
+		if s.st.tick%GravityIntervalTicks == 0 {
+			events = s.stepGravity(events)
+		}
+		if s.st.status == StatusPlaying {
+			events = s.stepQuota(events)
+		}
+	}
 	s.st.tick++
 	return events
 }
@@ -91,12 +103,30 @@ func (s *Sim) stepPlayer(in Input, events []Event) []Event {
 		return events
 	case TerrainExit:
 		if !st.exitOpen {
-			return append(events, Event{st.tick, EventExitSealed, to})
+			return append(events, Event{Tick: st.tick, Kind: EventExitSealed, Pos: to})
 		}
 	}
 
-	// The move succeeds. The only player is the mover, so the destination
-	// holds no occupant or a crystal.
+	// A boulder can only be pushed: horizontally, while resting, one cell into
+	// empty floor. Anything else (a second boulder, earth, a wall, a crystal,
+	// the exit, the cave edge) blocks the push and the move.
+	var pushedTo Pos
+	pushed := false
+	if dst.Occupant == OccupantBoulder {
+		beyond := to.Add(in.Move)
+		if (in.Move != DirLeft && in.Move != DirRight) || dst.Falling ||
+			!s.initial.InBounds(beyond) || !st.cells[s.initial.Index(beyond)].Empty() {
+			return events
+		}
+		st.cells[s.initial.Index(beyond)] = Cell{Terrain: TerrainEmpty, Occupant: OccupantBoulder}
+		dst.Occupant = OccupantNone
+		pushedTo, pushed = beyond, true
+		s.pushed = s.initial.Index(beyond)
+	}
+
+	// The move succeeds. The only player is the mover and pushing emptied a
+	// boulder cell, so the destination now holds no occupant or a crystal.
+	from := st.player
 	dug := dst.Terrain == TerrainEarth
 	collected := dst.Occupant == OccupantCrystal
 	if dug {
@@ -105,26 +135,96 @@ func (s *Sim) stepPlayer(in Input, events []Event) []Event {
 	if collected {
 		st.collected++
 	}
-	st.cells[s.initial.Index(st.player)].Occupant = OccupantNone
+	st.cells[s.initial.Index(from)].Occupant = OccupantNone
 	dst.Occupant = OccupantPlayer
 	st.player = to
 	st.moveCooldown = MoveIntervalTicks - 1
 
-	events = append(events, Event{st.tick, EventMoved, to})
+	events = append(events, Event{Tick: st.tick, Kind: EventMoved, Pos: to, From: from})
 	if dug {
-		events = append(events, Event{st.tick, EventDug, to})
+		events = append(events, Event{Tick: st.tick, Kind: EventDug, Pos: to})
 	}
 	if collected {
-		events = append(events, Event{st.tick, EventCollected, to})
+		events = append(events, Event{Tick: st.tick, Kind: EventCollected, Pos: to})
+	}
+	if pushed {
+		events = append(events, Event{Tick: st.tick, Kind: EventBoulderPushed, Pos: pushedTo, From: to})
 	}
 	if dst.Terrain == TerrainExit {
 		st.status = StatusComplete
-		events = append(events, Event{st.tick, EventCaveComplete, to})
+		events = append(events, Event{Tick: st.tick, Kind: EventCaveComplete, Pos: to})
 	}
 	return events
 }
 
-// stepQuota is the world phase: open the exit once the quota is met.
+// stepGravity is the boulder phase. Rows are scanned bottom to top and each
+// row left to right, so a supported stack falls together. A boulder moves at
+// most one cell per tick: cells a boulder moved into are marked updated and
+// skipped if the scan reaches them again (a boulder that rolled right), and
+// a boulder pushed this tick sits out this step.
+func (s *Sim) stepGravity(events []Event) []Event {
+	clear(s.updated)
+	if s.pushed >= 0 {
+		s.updated[s.pushed] = true
+	}
+	w := s.initial.Width
+	for y := s.initial.Height - 1; y >= 0; y-- {
+		for x := range w {
+			i := y*w + x
+			if s.st.cells[i].Occupant == OccupantBoulder && !s.updated[i] {
+				events = s.updateBoulder(Pos{x, y}, events)
+			}
+		}
+	}
+	return events
+}
+
+// updateBoulder applies, in order: fall into empty floor below; crush the
+// player below if already falling; roll off a rounded blocker (left side
+// first, then right) when the side cell and the cell below it are both
+// empty; otherwise come to rest.
+func (s *Sim) updateBoulder(p Pos, events []Event) []Event {
+	st := &s.st
+	b := &st.cells[s.initial.Index(p)]
+	if below := p.Add(DirDown); s.initial.InBounds(below) {
+		bc := st.cells[s.initial.Index(below)]
+		switch {
+		case bc.Empty():
+			s.moveBoulder(p, below)
+			return append(events, Event{Tick: st.tick, Kind: EventBoulderFell, Pos: below, From: p})
+		case bc.Occupant == OccupantPlayer && b.Falling && st.status == StatusPlaying:
+			// The boulder stops on the player; the attempt ends this tick.
+			b.Falling = false
+			st.status = StatusDead
+			return append(events, Event{Tick: st.tick, Kind: EventPlayerCrushed, Pos: below, From: p})
+		case bc.Occupant.Rounded():
+			for _, d := range [...]Dir{DirLeft, DirRight} {
+				side := p.Add(d)
+				diag := side.Add(DirDown)
+				if s.initial.InBounds(diag) && st.cells[s.initial.Index(side)].Empty() && st.cells[s.initial.Index(diag)].Empty() {
+					s.moveBoulder(p, side)
+					return append(events, Event{Tick: st.tick, Kind: EventBoulderRolled, Pos: side, From: p})
+				}
+			}
+		}
+	}
+	if b.Falling {
+		b.Falling = false
+		events = append(events, Event{Tick: st.tick, Kind: EventBoulderLanded, Pos: p})
+	}
+	return events
+}
+
+// moveBoulder moves the boulder at from to the empty cell to, marks it as
+// falling and as updated for the rest of this gravity step.
+func (s *Sim) moveBoulder(from, to Pos) {
+	ti := s.initial.Index(to)
+	s.st.cells[ti] = Cell{Terrain: TerrainEmpty, Occupant: OccupantBoulder, Falling: true}
+	s.st.cells[s.initial.Index(from)] = Cell{Terrain: TerrainEmpty}
+	s.updated[ti] = true
+}
+
+// stepQuota opens the exit once the quota is met.
 func (s *Sim) stepQuota(events []Event) []Event {
 	st := &s.st
 	if st.exitOpen || st.collected < s.initial.RequiredCrystals {
@@ -132,7 +232,7 @@ func (s *Sim) stepQuota(events []Event) []Event {
 	}
 	st.exitOpen = true
 	for _, p := range s.exits {
-		events = append(events, Event{st.tick, EventExitOpened, p})
+		events = append(events, Event{Tick: st.tick, Kind: EventExitOpened, Pos: p})
 	}
 	return events
 }
@@ -165,6 +265,17 @@ func (s *Sim) Collected() int { return s.st.collected }
 
 // Required returns the crystal quota.
 func (s *Sim) Required() int { return s.initial.RequiredCrystals }
+
+// Boulders returns the number of boulders in the cave.
+func (s *Sim) Boulders() int {
+	n := 0
+	for _, c := range s.st.cells {
+		if c.Occupant == OccupantBoulder {
+			n++
+		}
+	}
+	return n
+}
 
 // ExitOpen reports whether the quota has been met.
 func (s *Sim) ExitOpen() bool { return s.st.exitOpen }

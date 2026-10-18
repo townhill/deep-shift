@@ -57,17 +57,27 @@ func TestStateHashIsSensitiveToEveryStateComponent(t *testing.T) {
 	s = base(1)
 	s.st.cells[s.Cave().Index(Pos{1, 1})].Terrain = TerrainEmpty
 	add("one cell differs", s)
+	s = base(1)
+	s.st.cells[s.Cave().Index(Pos{1, 1})] = Cell{Occupant: OccupantBoulder}
+	add("resting boulder", s)
+	s.st.cells[s.Cave().Index(Pos{1, 1})].Falling = true
+	add("falling boulder", s)
+	s = base(1)
+	s.st.status = StatusDead
+	add("dead", s)
 }
 
 // Golden hashes pin the hash byte layout. If this test fails, the encoding or
 // a rule changed: bump RuleVersion or the hash magic deliberately, document
 // it, and review every replay fixture rather than regenerating blindly.
+// Last re-pinned for rule version 2 / hash layout v2 (falling byte per cell);
+// see docs/DECISIONS.md D-020.
 func TestStateHashGolden(t *testing.T) {
 	s, err := New(caveFromRows(t, 1, "#####", "#@.*E", "#####"), 42)
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantStart = "c4a49d84401c0e3f614a02487b2791a7a6fbdf88659e02ed2be6d8233c47c9a8"
+	const wantStart = "a80f73e912a89daa37f1a665cce877ca0089b89d48599b101b7731ad6fd6fd22"
 	if got := s.StateHash().String(); got != wantStart {
 		t.Errorf("tick 0 hash = %s, want %s", got, wantStart)
 	}
@@ -77,7 +87,7 @@ func TestStateHashGolden(t *testing.T) {
 	if s.Status() != StatusComplete {
 		t.Fatalf("status = %s, want complete", s.Status())
 	}
-	const wantEnd = "363a510e5507771d7bbbbd8e60c1e0b5ea27fb288a7a560b58156519973023d2"
+	const wantEnd = "bae1b555d9878a186980bafe61eec218c90a282228223f82cc827434202e31db"
 	if got := s.StateHash().String(); got != wantEnd {
 		t.Errorf("completed hash = %s, want %s", got, wantEnd)
 	}
@@ -101,6 +111,8 @@ func randomCave(rng *SplitMix64, w, h int) Cave {
 				cell.Terrain = TerrainWall
 			case r < 7:
 				cell.Occupant = OccupantCrystal
+			case r < 8:
+				cell.Occupant = OccupantBoulder
 			}
 		}
 	}
@@ -110,9 +122,15 @@ func randomCave(rng *SplitMix64, w, h int) Cave {
 	return c
 }
 
-func checkInvariants(s *Sim, initialCrystals, lastCollected int) error {
+func checkInvariants(s *Sim, initialCrystals, initialBoulders, lastCollected int) error {
 	players := 0
 	for i, c := range s.st.cells {
+		if c.Falling && c.Occupant != OccupantBoulder {
+			return fmt.Errorf("falling flag without a boulder at index %d", i)
+		}
+		if c.Occupant == OccupantBoulder && c.Terrain != TerrainEmpty {
+			return fmt.Errorf("boulder on %s terrain at index %d", c.Terrain, i)
+		}
 		if c.Occupant == OccupantPlayer {
 			players++
 			if p := (Pos{i % s.Width(), i / s.Width()}); p != s.Player() {
@@ -135,8 +153,43 @@ func checkInvariants(s *Sim, initialCrystals, lastCollected int) error {
 	if s.Collected() < lastCollected {
 		return fmt.Errorf("collected count decreased from %d to %d", lastCollected, s.Collected())
 	}
-	if s.ExitOpen() != (s.Collected() >= s.Required()) {
-		return fmt.Errorf("exit open = %v with %d/%d crystals", s.ExitOpen(), s.Collected(), s.Required())
+	if got := s.Boulders(); got != initialBoulders {
+		return fmt.Errorf("boulders not conserved: %d, want %d", got, initialBoulders)
+	}
+	// The quota check is skipped on the tick the player dies.
+	if s.ExitOpen() && s.Collected() < s.Required() ||
+		s.Status() != StatusDead && s.ExitOpen() != (s.Collected() >= s.Required()) {
+		return fmt.Errorf("exit open = %v with %d/%d crystals (status %s)", s.ExitOpen(), s.Collected(), s.Required(), s.Status())
+	}
+	return nil
+}
+
+// checkBoulderEvents verifies one tick's boulder movement: falls go exactly
+// one cell down, rolls and pushes one cell sideways, and no boulder moves
+// twice (no move starts where an earlier move in the same tick ended, and no
+// two moves share a start or an end).
+func checkBoulderEvents(events []Event) error {
+	starts, ends := map[Pos]bool{}, map[Pos]bool{}
+	for _, e := range events {
+		var dx, dy int
+		switch e.Kind {
+		case EventBoulderFell:
+			dx, dy = 0, 1
+		case EventBoulderRolled, EventBoulderPushed:
+			dx, dy = e.Pos.X-e.From.X, 0
+			if dx != 1 && dx != -1 {
+				return fmt.Errorf("%v is not one cell sideways", e)
+			}
+		default:
+			continue
+		}
+		if e.Pos != (Pos{e.From.X + dx, e.From.Y + dy}) {
+			return fmt.Errorf("%v moved more than one cell", e)
+		}
+		if ends[e.From] || starts[e.From] || ends[e.Pos] {
+			return fmt.Errorf("%v: a boulder moved twice in one tick", e)
+		}
+		starts[e.From], ends[e.Pos] = true, true
 	}
 	return nil
 }
@@ -155,13 +208,17 @@ func TestRandomisedRunsKeepInvariantsAndDeterminism(t *testing.T) {
 			}
 			b, _ := New(c, seed)
 			initialCrystals := c.CountOccupant(OccupantCrystal)
+			initialBoulders := c.CountOccupant(OccupantBoulder)
 			inputRNG := NewSplitMix64(seed ^ 0xdeadbeef)
 			lastCollected := 0
 			for tick := range ticks {
 				in := Input{Move: Dir(inputRNG.Intn(5))}
-				a.Step(in)
+				ev := a.Step(in)
 				b.Step(in)
-				if err := checkInvariants(a, initialCrystals, lastCollected); err != nil {
+				if err := checkBoulderEvents(ev); err != nil {
+					t.Fatalf("seed %d tick %d: %v\n%s", seed, tick, err, a.ASCII())
+				}
+				if err := checkInvariants(a, initialCrystals, initialBoulders, lastCollected); err != nil {
 					t.Fatalf("seed %d tick %d: %v\n%s", seed, tick, err, a.ASCII())
 				}
 				lastCollected = a.Collected()

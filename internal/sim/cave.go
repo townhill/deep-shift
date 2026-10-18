@@ -66,8 +66,14 @@ func (c *Cave) Validate() error {
 			errs = append(errs, fmt.Errorf("cell %s: unknown occupant %d", p, cell.Occupant))
 			continue
 		}
+		if cell.Falling && cell.Occupant != OccupantBoulder {
+			errs = append(errs, fmt.Errorf("cell %s: only boulders can be falling", p))
+		}
 		if cell.Occupant == OccupantNone {
 			continue
+		}
+		if cell.Occupant == OccupantBoulder && cell.Terrain == TerrainEarth {
+			errs = append(errs, fmt.Errorf("cell %s: a boulder cannot be embedded in earth", p))
 		}
 		switch cell.Terrain {
 		case TerrainWall:
