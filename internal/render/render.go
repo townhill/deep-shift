@@ -225,6 +225,20 @@ func (r *Renderer) drawOverlay(screen *ebiten.Image, lines []string) {
 	}
 }
 
+// DrawPerf draws the performance overlay's lines in the small debug font,
+// on a dark backdrop at the top right of the play area.
+func (r *Renderer) DrawPerf(screen *ebiten.Image, lines []string) {
+	w := 0
+	for _, l := range lines {
+		w = max(w, len(l)*glyphW)
+	}
+	x, y := ScreenWidth-w-12, HUDHeight+4
+	r.fillRect(screen, x-4, y-2, w+8, len(lines)*glyphH+4, color.RGBA{0, 0, 0, 0xc0})
+	for i, l := range lines {
+		ebitenutil.DebugPrintAt(screen, l, x, y+i*glyphH)
+	}
+}
+
 // DrawMenu renders a title or cave-select screen: a background of floor
 // and wall tiles, the title at 4x, entries centred with the selection
 // highlighted, and a footer of key hints.

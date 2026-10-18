@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -24,6 +25,7 @@ import (
 	"github.com/townhill/deep-shift/internal/audio"
 	"github.com/townhill/deep-shift/internal/game"
 	"github.com/townhill/deep-shift/internal/level"
+	"github.com/townhill/deep-shift/internal/perf"
 	"github.com/townhill/deep-shift/internal/render"
 	"github.com/townhill/deep-shift/internal/replay"
 )
@@ -33,6 +35,7 @@ func main() {
 	replayDir := flag.String("replay-dir", defaultReplayDir(), "directory for replays of finished attempts (empty: do not save)")
 	showVersion := flag.Bool("version", false, "print the build version and exit without opening a window")
 	noAudio := flag.Bool("no-audio", false, "do not open an audio device (for machines without sound output)")
+	showPerf := flag.Bool("perf", false, "start with the performance overlay on (toggle with ` or F3)")
 	flag.Parse()
 
 	build := buildVersion()
@@ -59,7 +62,10 @@ func main() {
 	ebiten.SetWindowSize(render.ScreenWidth*5/4, render.ScreenHeight*5/4)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetTPS(game.UpdatesPerSecond)
-	a := &app{shell: shell, renderer: render.New(build), replayDir: *replayDir}
+	a := &app{
+		shell: shell, renderer: render.New(build), replayDir: *replayDir,
+		perfOn: *showPerf, updates: perf.NewWindow(perfWindow), draws: perf.NewWindow(perfWindow),
+	}
 	if !*noAudio {
 		a.sound = audio.New()
 	}
@@ -108,15 +114,30 @@ func defaultReplayDir() string {
 	return filepath.Join(dir, "Deep Shift", "replays")
 }
 
+// perfWindow is how many updates and draws the overlay averages over: four
+// seconds at 60 per second.
+const perfWindow = 4 * game.UpdatesPerSecond
+
 // app adapts the shell to ebiten.Game.
 type app struct {
 	shell     *game.Shell
 	renderer  *render.Renderer
 	sound     *audio.Player // nil with -no-audio: silent
 	replayDir string
+
+	perfOn         bool
+	updates, draws *perf.Window
 }
 
 func (a *app) Update() error {
+	start := time.Now()
+	defer func() { a.updates.Add(time.Since(start)) }()
+	if inpututil.IsKeyJustPressed(ebiten.KeyBackquote) || inpututil.IsKeyJustPressed(ebiten.KeyF3) {
+		a.perfOn = !a.perfOn
+		if !a.perfOn {
+			log.Print("perf: " + strings.Join(a.perfLines(), "; "))
+		}
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyF) {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	}
@@ -154,11 +175,28 @@ func (a *app) Update() error {
 }
 
 func (a *app) Draw(screen *ebiten.Image) {
+	start := time.Now()
 	if a.shell.Screen() != game.ScreenPlaying {
 		a.renderer.DrawMenu(screen, a.shell.Menu())
-		return
+	} else {
+		a.renderer.Draw(screen, a.shell.Playlist().Session().Frame())
 	}
-	a.renderer.Draw(screen, a.shell.Playlist().Session().Frame())
+	a.draws.Add(time.Since(start))
+	if a.perfOn {
+		a.renderer.DrawPerf(screen, a.perfLines())
+	}
+}
+
+// perfLines is the performance overlay: frame and update rates as
+// Ebitengine measures them, and CPU time per update (which includes every
+// simulation tick) and per draw (submitting draw calls, not GPU time).
+func (a *app) perfLines() []string {
+	ms := func(d time.Duration) string { return fmt.Sprintf("%.3f ms", float64(d)/float64(time.Millisecond)) }
+	return []string{
+		fmt.Sprintf("FPS %.1f  TPS %.1f", ebiten.ActualFPS(), ebiten.ActualTPS()),
+		fmt.Sprintf("update avg %s  p95 %s (incl. simulation)", ms(a.updates.Avg()), ms(a.updates.P95())),
+		fmt.Sprintf("draw   avg %s  p95 %s (CPU)", ms(a.draws.Avg()), ms(a.draws.P95())),
+	}
 }
 
 func (a *app) Layout(int, int) (int, int) {
