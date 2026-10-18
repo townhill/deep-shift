@@ -85,9 +85,42 @@ Start with `go run ./cmd/deepshift -cave cave_02`, or press N on a pause or end 
 - [ ] Feel: is the fall speed (10 cells/s) fair? Do crystal crushes feel fair, or should a falling crystal
   be collected instead (D-019)?
 
-## Phase 3 — Water and sluice gate
+## Phase 3 — Water and sluice gate (delivered in the cloud; Mac playtest pending)
 
-Not started. Begin only after Phase 2's physics tests and the caves 02/03 Mac playtest are stable.
+Acceptance contract: SPEC §11 Phase 3. Rules are in [PHYSICS.md](PHYSICS.md) (rule version 3), and the
+decisions are D-026 to D-032. The owner asked for this phase to start before the Phase 2 Mac playtest
+([D-026](DECISIONS.md#d-026-phase-3-started-before-the-phase-2-mac-playtest-owner-decision)).
+
+- [x] Conserving, bounded water: 0..4 units per cell, falls then spreads with no left/right bias;
+  explicit update order after gravity (Cloud)
+- [x] Closed gate blocks water; a valve opens it and the water rules find the opening by themselves,
+  with no level scripts (Cloud)
+- [x] Water never passes walls, earth, closed gates, valves or the exit, never leaves the map, and the
+  total never changes: checked every tick in randomised runs and in the cave 04 fixture (Cloud)
+- [x] Falling objects and water follow one policy: objects ignore water and swap places with it
+  ([D-028](DECISIONS.md#d-028-falling-objects-and-water-one-policy)) (Cloud)
+- [x] Identical replay inputs give identical water layouts and hashes at every tick across 100 runs,
+  including the cave 04 reservoir drain (Cloud)
+- [x] Cave 04 "Reservoir": the only way down is a flooded shaft that the valve drains; tests show it is
+  unreachable without the valve (Cloud)
+- [x] Visuals: translucent, eased water with wave lines on deep cells; gate and valve tiles; HUD hints.
+  Observed in a Linux headless capture only (D-014 addendum)
+- [ ] **Mac:** playtest of cave 04 (checklist below)
+
+### Mac playtest checklist for cave 04
+
+Start with `go run ./cmd/deepshift -cave cave_04`, or press N on a pause or end screen to move on.
+
+- [ ] Deep water (full, with wave lines) and shallow water (partly filled) are easy to tell apart
+- [ ] Walking into the flooded shaft shows "Too deep to wade"; the puddle near the start can be waded
+- [ ] Standing on the valve shows "Space: open the sluice gate"; Space and Enter both turn it, once per
+  press, and the wheel's spokes visibly turn
+- [ ] The water drains smoothly through the open gates into the basin (no flicker or jumps)
+- [ ] The shaft can then be climbed down; the basin's top row can be waded and its floor cannot
+- [ ] The crystal on the basin floor can be taken from above; water follows into dug tunnels
+- [ ] After the drain, Space at the valve closes the gates again (they are clear) and the prompt changes
+- [ ] The saved replay of a completed attempt reports "matches expect block" in `cavetool replay`
+- [ ] Feel: is the drain speed (10 steps/s) right? Is the one-unit slope of settled water readable?
 
 ## Phase 4 — Playable native Mac vertical slice
 
@@ -97,7 +130,7 @@ Not started.
 
 | ID | Follow-up | Why |
 |---|---|---|
-| F-1 | Full hands-on Mac playtest (checklists above) | A first pass was done; the detailed checks and Phase 2 caves are not yet confirmed on macOS |
+| F-1 | Full hands-on Mac playtest (checklists above) | A first pass was done; the detailed checks and the Phase 2 and 3 caves are not yet confirmed on macOS |
 | F-2 | Developer ID signing and notarisation in CI | Remove the Gatekeeper "Open Anyway" step; needs Apple credentials as secrets |
 | F-3 | App icon (`.icns`) generated from original art | The bundle currently has no icon |
 | F-4 | Retina-crisp rendering (`LayoutF`/device scale) and a real UI font | Placeholder text uses the 2× debug font |
@@ -109,3 +142,6 @@ Not started.
 | F-10 | Tune `GravityIntervalTicks`; confirm crystal crushes feel fair | Provisional values from D-018 and D-019; needs Mac playtest feedback |
 | F-11 | Sound cues for land, push and crush events | SPEC §2 and Phase 4; the events already exist |
 | F-12 | Move `actions/upload-artifact` to a Node 24 release | CI warns that the v4 action targets Node 20 |
+| F-13 | Tune water: capacity, cadence, how far it spreads | Provisional values (D-027); needs the cave 04 Mac playtest |
+| F-14 | Sound cues for valves, gates and splashes | SPEC §2; the valve and gate events already exist |
+| F-15 | Slow the player in shallow water? | SPEC §6.3 allows it later; it must be a rule (same in replays), not a renderer effect |

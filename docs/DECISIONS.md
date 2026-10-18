@@ -327,3 +327,145 @@ boulder-specific.
   prompt, and the push into the pit.
 - The replay files the app wrote matched the golden fixtures' final and trace hashes exactly. This is
   still Linux/OpenGL evidence, not a Mac test.
+
+## D-026: Phase 3 started before the Phase 2 Mac playtest (owner decision)
+
+- The kickoff prompt and the roadmap said to begin water and gates only once Phase 2's physics tests and Mac
+  playtesting were stable. On 2026-10-18 the owner asked for Phase 3 to start on a new branch anyway,
+  before the caves 02/03 checklist had been reported.
+- Consequence: Phase 2 tuning (fall speed, crystal crushes) may still change after that playtest. Any
+  such change needs another rule version and a fixture review. Water runs on the gravity cadence, so
+  retuning `GravityIntervalTicks` changes both together.
+- The Phase 2 Mac checklist stays open in the roadmap.
+
+## D-027: Water model (rule version 3, provisional tuning)
+
+- **Fluid layer:** `Cell.Water` holds 0 to 4 units (`WaterCapacity`). A full cell is *deep*; 1 to 3 is
+  *shallow*. Water may occupy open floor (empty terrain or an open gate) without a boulder or crystal; it
+  shares cells with the player.
+- **Cadence:** on gravity ticks, after gravity, so 10 water steps per second.
+- **Fall:** rows bottom to top; each cell pours as much as fits into the cell below. Water moves one cell
+  down per step, never more.
+- **Spread:** every side-by-side pair whose levels, after the fall, differ by two or more passes one unit
+  to the lower cell. All pairs are judged on the same levels and applied together.
+- **Why this algorithm:** SPEC §6.3 asks for discrete units, down then sideways, deterministic
+  tie-breaking, and no duplication or deletion.
+  - Judging every pair on frozen levels removes the bias a left-to-right pass would have; a mirrored cave
+    evolves into the mirror image (tested).
+  - Every transfer is between two cells, so the total is exactly conserved.
+  - Bounds hold by construction. A cell only receives from a side that is at least two units higher, and
+    only gives to a side at least two units lower, so it never exceeds 4 or drops below 0.
+- **Settling:** a fall lowers the water's height; a spread keeps the height and strictly lowers the sum of
+  squared levels. A closed cave therefore always comes to rest. The test covers 20 random caves.
+- **Deliberate limits for v0.1:**
+  - There is no pressure, so water never rises: no U-tubes, no siphons.
+  - A one-unit film on a flat floor never spreads further, so levels settle within one unit of their
+    neighbours rather than perfectly flat. On a flat floor, water therefore settles as a slope and
+    reaches at most three cells past the last full cell; it travels far only by falling. Cave design
+    has to use drops, as cave 04 does.
+  - There are no flow events; renderers read levels from snapshots.
+- **Player:** shallow water can be entered, with no slowdown yet. Deep water blocks the move with a
+  `too-deep` event and, like any blocked move, does not start the cooldown. Water never harms or moves the
+  player. The player can end up standing in deep water, when water flows in or a push displaces it into
+  their cell, and can always step out.
+
+## D-028: Falling objects and water: one policy
+
+- SPEC §6.3 (provisional) says water does not stop boulders falling, and displaced water is conserved
+  where possible.
+- **Policy:** boulders and crystals treat water as empty space when falling, rolling and being pushed.
+  Water treats them as walls. When an object moves into a cell holding water, that water swaps into the
+  cell the object just left.
+- The swap always fits, because an object's cell never holds water. The cell it vacates is empty floor
+  with room for a full cell. Conservation is exact, so there is no capacity or displacement limitation to
+  document.
+- **Effects:**
+  - Objects sink through a pool one cell per gravity step while the water rises above them.
+  - A boulder or crystal dams a channel.
+  - A push into water leaves that water in the cell the player steps into.
+- Water does not slow, float or carry objects in v0.1.
+
+## D-029: Sluice gates, valves and the Interact action
+
+- **Terrain:**
+  - A closed gate blocks everything, like a wall.
+  - An open gate is exactly empty floor for every rule: the player, objects and water.
+  - Valves are never passable.
+  - A valve's state is its terrain (shut or open) and always equals its gates' state.
+- **Mechanisms** link each valve to its gates. They are immutable cave data, covered by the state hash and
+  the cave checksum.
+- **Interact** turns the valve next to the player; if several are adjacent, the first in the order up,
+  down, left, right.
+  - It shares the movement action window. A successful turn starts the cooldown.
+  - It takes precedence over a move. With no valve in reach, the move applies.
+- **Opening** always succeeds.
+- **Closing** needs every gate of the mechanism clear: no occupant and no water. Otherwise `gate-jammed`
+  names the first blocked gate, nothing changes and the cooldown does not start.
+  - Why: a slab closing through water or an object has no conserving, readable outcome in v0.1. It would
+    have to destroy water, or crush or move objects.
+- **Trapdoors** follow from the rules: a closed gate under a boulder holds it, and opening the gate drops
+  the boulder on the same tick's gravity step.
+- **App:**
+  - Space or Enter interacts. The session takes the press edge and latches it like a direction tap until
+    the next action window, and uses it only if a valve is next to the player then. Holding the key turns
+    the valve once.
+  - The HUD shows "Space: open/close the sluice gate" beside a valve.
+- **Replays:** commands gain the action `"interact"`. The replay format version stays 1: the file shape is
+  unchanged, and older builds cannot run rule version 3 anyway.
+
+## D-030: Rule version 3, hash layout v3 and the reviewed fixture changes
+
+- `sim.RuleVersion` is 3, and the hash magic is `deep-shift/state-hash/v3`. Each cell gains a water byte,
+  and the mechanism links are appended. `TestStateHashGolden` was re-pinned.
+- **The five earlier fixtures** were re-run under rule 3 and their `replay -trace` output (every event
+  line and grid) compared with the `master` build's (rule 2). All five were identical, 12,480 lines in all.
+  Final tick, status and crystals collected were unchanged.
+  - Only `rule_version`, `final_hash` and `trace_hash` changed.
+  - Two descriptions that named rule version 2 were reworded; descriptions are not hashed.
+- Replays recorded by Phase 2 builds are rejected by this build with a message naming both rule versions.
+
+## D-031: Cave format version 3
+
+- From `format_version` 3, rows may contain:
+  - `~` for deep water and `1` to `3` for shallow amounts;
+  - `G`/`g` for a closed/open gate;
+  - `V`/`v` for a shut/open valve.
+- Older versions reject these symbols and name the version needed.
+- **New field `mechanisms`:** `[{"valve": {"x", "y"}, "gates": [{"x", "y"}, ...]}]`.
+  - Every valve and gate must be listed exactly once, and states must agree.
+  - Errors are located, for example `mechanisms[0].gates[1]: ...`.
+- **Checksum:** it covers mechanisms only when present, so earlier caves keep their checksums and replays.
+- **Dumps:** water in an open gate or under the player is not shown, the same lossy rule as other dumps.
+  The state hash covers it.
+
+## D-032: Example cave 04 "Reservoir"
+
+- SPEC §8: "Opening a gate changes reachable space." The cave is 30×16, quota 7 of 9, with 44 units of
+  water.
+- **Lessons:**
+  - Deep water blocks: the only way down is a two-wide shaft full of it.
+  - Shallow water can be waded: a puddle near the start, and later the row above the basin.
+  - The valve beside the shaft's mouth opens the two gates at its foot. The 40 units fall into the basin,
+    whose floor row stays deep.
+  - A crystal on the basin floor is taken from the shallow row above.
+  - Earth holds water back; tunnels dug from the basin let it follow.
+- **Evidence:**
+  - With no input the reservoir stays at rest, and a flood fill without the valve cannot get below the
+    wall band.
+  - The completion fixture goes below only after the valve turns, and conserves water on every tick.
+  - It joins the 100-run determinism test.
+- It is deliberately simple, with no boulders. Cave 05 (Phase 4) combines water and gravity.
+
+## D-014 addendum: Phase 3 headless capture (2026-10-18)
+
+- The by-hand `exp/vmhost` setup (Linux, Xvfb, Mesa software GL; nothing committed) replayed
+  `cave_04_complete.json` into the unmodified app (`-cave cave_04 -replay-dir ""`). Key events were
+  injected, with Space for `interact`.
+- The frames showed, in order:
+  - the "Too deep to wade" prompt and the waved deep shaft;
+  - the valve hint;
+  - the valve spokes turning from + to ×;
+  - water easing down through the open gates into the basin;
+  - the player wading in the shallow row;
+  - the completion overlay.
+- This is Linux/OpenGL evidence only, not a Mac test.

@@ -1,23 +1,29 @@
 # Deep Shift
 
 Deep Shift is an original, native macOS 2D underground physics/puzzle adventure: dig through a cave, collect
-crystals, meet the quota and reach the exit, with environmental physics (boulders, then water) to come. It is
-written in Go with [Ebitengine](https://ebitengine.org) and runs as a local `.app`. There is no browser,
-Electron, server or database.
+crystals, meet the quota and reach the exit, using environmental physics (falling boulders and flowing
+water). It is written in Go with [Ebitengine](https://ebitengine.org) and runs as a local `.app`. There is no
+browser, Electron, server or database.
 
 The game takes design inspiration from the *rules-driven* arcade cave games of the 1980s. All of its code,
 caves, art, names and rules are original to this project.
 
-> **Status: Phases 0–2 delivered; Phase 2 awaits a Mac playtest.** Movement, digging, crystals, walls and a
-> quota-sealed exit, plus **gravity**: boulders and crystals fall, roll and crush, and boulders can be
-> pushed. Three caves:
+> **Status: Phases 0–3 delivered in the cloud; Phases 2 and 3 await a Mac playtest.** Movement, digging,
+> crystals, walls and a quota-sealed exit, plus:
+>
+> - **gravity:** boulders and crystals fall, roll and crush, and boulders can be pushed;
+> - **water:** it falls and spreads, is conserved exactly, and is too deep to wade when a cell is full;
+> - **sluice gates** that a valve opens and closes.
+>
+> Four caves:
 >
 > - the "Proving Ground" test cave;
 > - 02 "Unstable Ground";
-> - 03 "The Roll".
+> - 03 "The Roll";
+> - 04 "Reservoir".
 >
-> There's pause/restart, a HUD, and automatic replays of finished attempts. There's no water, gates or
-> creatures yet. See [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
+> There's pause/restart, a HUD, and automatic replays of finished attempts. There are no creatures yet. See
+> [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
 
 ## What has and has not been verified
 
@@ -25,12 +31,13 @@ caves, art, names and rules are original to this project.
 |---|---|---|
 | Rules: movement, bounds, walls, digging, collecting, exit quota, restart | `go test ./...` (table-driven, headless) | Verified on Linux; CI also runs them on macOS arm64 |
 | Gravity: boulders and crystals fall, roll (left first) and crush; boulders push (no chains); at most one move per tick | `go test ./...`, randomised invariant runs, golden fixtures | Verified on Linux; CI runs them on macOS arm64 |
-| Determinism: 100 identical runs → identical hashes at every tick, including a death | `internal/replay` test + golden fixtures | Verified (Linux); CI checks the same golden hashes on macOS arm64 |
+| Water: falls then spreads with no left/right bias, conserved every tick, contained by every barrier, displaced by objects; gates and valves | `go test ./...` (hand-computed cases, mirror test, randomised invariants), cave 04 fixture | Verified on Linux; CI runs them on macOS arm64 |
+| Determinism: 100 identical runs → identical hashes at every tick, including a death and a reservoir drain | `internal/replay` test + golden fixtures | Verified (Linux); CI checks the same golden hashes on macOS arm64 |
 | A finished attempt is saved as a replay that reproduces it exactly | Session tests; app run headlessly (below) | Verified (Linux) |
 | Cave files validate; broken caves give useful errors | `internal/level` tests, `cavetool validate` | Verified |
 | macOS arm64 / amd64 executables compile | Cross-compile from Linux; native build on CI's macOS runner | Compile-only |
 | `DeepShift.app` bundle builds and is ad-hoc signed | `scripts/build-macos-app.sh` on CI's macOS runner | Packaging checked in CI; **launch from Finder not yet verified** |
-| Window, keyboard, rendering, HUD on a real Mac | Owner ran `go run ./cmd/deepshift` on a Mac: "ok as a first pass" (Phase 1 build) | First pass only; **caves 02/03 and boulders not yet played on a Mac** |
+| Window, keyboard, rendering, HUD on a real Mac | Owner ran `go run ./cmd/deepshift` on a Mac: "ok as a first pass" (Phase 1 build) | First pass only; **caves 02–04, boulders and water not yet played on a Mac** |
 | Rendering + key handling of the real app on Linux (Xvfb, Mesa software GL) | Ebitengine `exp/vmhost` headless capture, run once by hand | Observed in the cloud session; not macOS, not in CI ([D-014](docs/DECISIONS.md#d-014-ebitengine-expvmhost-headless-capture-assessed-not-adopted)) |
 
 ## Play it on a Mac (from source)
@@ -81,16 +88,16 @@ release milestone.
 | Key | Action |
 |---|---|
 | Arrow keys / WASD | Move one tile, digging earth and collecting crystals. Holding a key repeats one move per 4 ticks (200 ms). |
+| Space / Enter | Turn the valve next to you, opening or closing its sluice gates. One turn per press. |
 | Esc | Pause / resume. Simulation and input stop while paused. |
 | R | Restart the cave, from the pause, completion or death screen. |
 | N | Next cave, from the pause, completion or death screen (wraps after the last). |
 | F | Toggle fullscreen |
 | Cmd+Q / close window | Quit |
 
-WASD uses physical key positions, so it stays under the same fingers on non-US layouts. Space/Enter are
-reserved for mechanisms (valves, gates) in later phases.
+WASD uses physical key positions, so it stays under the same fingers on non-US layouts.
 
-The caves play in order: `test_cave`, then `cave_02`, then `cave_03`. To start elsewhere, run
+The caves play in order: `test_cave`, `cave_02`, `cave_03`, then `cave_04`. To start elsewhere, run
 `go run ./cmd/deepshift -cave cave_02`. To play your own cave file, run
 `go run ./cmd/deepshift -cave path/to/cave.json`; validation errors are printed to the terminal.
 
@@ -102,6 +109,15 @@ The caves play in order: `test_cave`, then `cave_02`, then `cave_03`. To start e
 - You can push one boulder left or right into open floor.
 - Boulders and crystals roll off each other.
 - You can still grab a falling crystal by walking into it from the side.
+
+**Rules of thumb for water:**
+
+- Water falls, then spreads sideways. It never rises and never disappears.
+- You can wade through shallow water, but a full cell (with wave lines) is too deep.
+- A valve opens or closes its gates. An open gate is just floor; a closed one is a wall.
+- A gate only closes when nothing (and no water) is in it.
+- Boulders and crystals sink through water, and the water moves up into the space they leave.
+- Earth holds water back until you dig it.
 
 The full rules are in [docs/PHYSICS.md](docs/PHYSICS.md).
 
@@ -153,7 +169,7 @@ docs/                 SPEC, ROADMAP, DECISIONS, PHYSICS
 ## Documentation
 
 - [docs/SPEC.md](docs/SPEC.md) — the game design and technical specification (source of truth)
-- [docs/PHYSICS.md](docs/PHYSICS.md) — the rules as actually implemented (rule version 1)
+- [docs/PHYSICS.md](docs/PHYSICS.md) — the rules as actually implemented (rule version 3)
 - [docs/DECISIONS.md](docs/DECISIONS.md) — decisions and deviations, with rationale
 - [docs/ROADMAP.md](docs/ROADMAP.md) — phase status, playtest checklist and follow-ups
 - [CLAUDE.md](CLAUDE.md) — working rules for coding agents

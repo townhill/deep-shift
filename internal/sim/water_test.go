@@ -208,7 +208,7 @@ func TestWaterFlowsIntoThePlayersCell(t *testing.T) {
 
 // Falling objects treat water as empty space and swap places with it, so an
 // object sinks through a pool one cell per gravity step and the water rises
-// above it (D-027).
+// above it (D-028).
 func TestObjectsSinkThroughWaterDisplacingIt(t *testing.T) {
 	for _, obj := range []string{"O", "*"} {
 		t.Run(obj, func(t *testing.T) {
