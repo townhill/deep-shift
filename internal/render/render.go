@@ -116,6 +116,7 @@ func (r *Renderer) drawWorld(f game.Frame) {
 		op.GeoM.Translate(math.Round(g.X*TileSize-camX), math.Round(g.Y*TileSize-camY))
 		r.world.DrawImage(r.tiles[k], op)
 	}
+	r.drawWater(f, x0, y0, camX, camY)
 	op.GeoM.Reset()
 	if snap.Status == sim.StatusDead {
 		// Crushed: squashed to the bottom of the cell and tinted red.
@@ -123,16 +124,23 @@ func (r *Renderer) drawWorld(f game.Frame) {
 		op.GeoM.Translate(0, TileSize*0.55)
 		op.ColorScale.Scale(1, 0.45, 0.45, 1)
 	}
-	op.GeoM.Translate(math.Round(f.PlayerX*TileSize-camX), math.Round(f.PlayerY*TileSize-camY))
+	px, py := math.Round(f.PlayerX*TileSize-camX), math.Round(f.PlayerY*TileSize-camY)
+	op.GeoM.Translate(px, py)
 	r.world.DrawImage(r.tiles[sprites.Player], op)
-	r.drawWater(f, x0, y0, camX, camY)
+	// Wading: water covers the legs in proportion to the level of the cell
+	// the player stands in, but never the head, so the player stays visible
+	// even in deep water.
+	if i := snap.Player.Y*snap.Width + snap.Player.X; i < len(f.Water) && f.Water[i] > 0 {
+		h := min(f.Water[i]/sim.WaterCapacity, 0.55) * TileSize
+		r.fillRectF(r.world, px, py+TileSize-h, TileSize, h, waterColour)
+	}
 }
 
-// drawWater draws translucent water over everything else in the world, so
-// a wading player is tinted where they stand and an object sinking out of a
-// cell passes under the water rising into it. The fill height follows the
-// eased level; deep cells (exactly full in the snapshot) carry wave lines,
-// the shape cue that the player cannot enter them.
+// drawWater draws translucent water over terrain and objects, so an object
+// sinking out of a cell passes under the water rising into it. The player is
+// drawn after it (see drawWorld). The fill height follows the eased level;
+// deep cells (exactly full in the snapshot) carry wave lines, the shape cue
+// that the player cannot enter them.
 func (r *Renderer) drawWater(f game.Frame, x0, y0 int, camX, camY float64) {
 	snap := f.Snapshot
 	if len(f.Water) != len(snap.Cells) {
