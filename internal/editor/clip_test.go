@@ -49,9 +49,12 @@ func TestCopyAndPaste(t *testing.T) {
 	if got := rowsOf(e, Box{20, 2, 23, 4}); !slices.Equal(got, want) || len(e.undo) != undos+2 {
 		t.Fatalf("second paste %q, %d undo steps", got, len(e.undo)-undos)
 	}
+	if !strings.HasPrefix(e.View().Hint, "Pasting 4 x 3: click to place it") {
+		t.Fatalf("hint while pasting %q", e.View().Hint)
+	}
 	tap(e, Input{Back: true}) // stops pasting
-	if e.pasting || e.View().Paste != nil {
-		t.Fatal("Esc should stop pasting")
+	if e.pasting || e.View().Paste != nil || strings.Contains(e.View().Hint, "Pasting") {
+		t.Fatalf("Esc should stop pasting, and the hint say so: %q", e.View().Hint)
 	}
 	tap(e, Input{Undo: true})
 	if rowsOf(e, Box{20, 2, 23, 4})[1] != "...." {

@@ -643,8 +643,8 @@ func (e *Editor) startPaste() {
 		e.setNotice("Nothing copied yet: Option-drag to select, then Cmd+C")
 		return
 	}
-	e.pasting = true
-	e.setNotice(fmt.Sprintf("Pasting %d x %d: click to place it, Esc or right-click to stop", e.clip.W, e.clip.H))
+	e.pasting = true // the hint says how to place it while pasting lasts
+	e.noticeLeft = 0
 }
 
 // stamp pastes the copy with its top-left corner at p, as one undo step.
