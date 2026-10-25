@@ -57,6 +57,8 @@ type Shell struct {
 	editItems []editItem
 	editor    *editor.Editor
 	playtest  *Session
+	clip      editor.Clip // the editor's last copy, carried from cave to cave
+	clipOK    bool
 }
 
 // caveItem is one entry of the cave list: a built-in cave or one of the
@@ -167,6 +169,9 @@ func (s *Shell) OpenEditor(d level.Draft, path string) error {
 	e, err := editor.New(d, path, s.layout, s.storage)
 	if err != nil {
 		return err
+	}
+	if s.clipOK {
+		e.SetClip(s.clip)
 	}
 	s.editor = e
 	s.change(ScreenEditor)
@@ -363,6 +368,11 @@ func (s *Shell) openEditList() {
 		s.editItems = append(s.editItems, editItem{group: editBuiltIn, label: l.Title, open: func() (level.Draft, string, error) {
 			return editor.CopyOf(l), "", nil
 		}})
+	}
+	if s.editor != nil {
+		if c, ok := s.editor.Clip(); ok {
+			s.clip, s.clipOK = c, true
+		}
 	}
 	s.editor, s.playtest = nil, nil
 	s.cursor = selected

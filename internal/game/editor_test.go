@@ -270,3 +270,35 @@ func TestPlaytestEditorBuiltSluice(t *testing.T) {
 		t.Fatalf("the gate is %v after turning the valve", c.Terrain)
 	}
 }
+
+// A copy made in one cave can be pasted into the next cave opened.
+func TestCopyCarriesBetweenCaves(t *testing.T) {
+	sh, _ := newEditorShell(t)
+	if err := sh.OpenEditor(editor.CopyOf(embeddedCave(t, "cave_04")), ""); err != nil {
+		t.Fatal(err)
+	}
+	sh.UpdateEditor(editor.Input{})
+	cell := func(x, y int) (int, int) { return x*32 + 16, 64 + y*32 + 16 }
+	x0, y0 := cell(12, 6) // the valve
+	x1, y1 := cell(14, 11)
+	sh.UpdateEditor(editor.Input{MouseX: x0, MouseY: y0, Alt: true, Paint: true})
+	sh.UpdateEditor(editor.Input{MouseX: x1, MouseY: y1, Alt: true, Paint: true})
+	sh.UpdateEditor(editor.Input{MouseX: x1, MouseY: y1})
+	editorTap(sh, editor.Input{Copy: true})
+	editorTap(sh, editor.Input{Back: true}) // deselects
+	editorTap(sh, editor.Input{Back: true}) // leaves: copying changed nothing
+	if sh.Screen() != ScreenEditList {
+		t.Fatalf("screen %d", sh.Screen())
+	}
+	if err := sh.OpenEditor(editor.NewCave(), ""); err != nil {
+		t.Fatal(err)
+	}
+	sh.UpdateEditor(editor.Input{})
+	editorTap(sh, editor.Input{Paste: true})
+	x, y := cell(5, 2)
+	editorTap(sh, editor.Input{MouseX: x, MouseY: y, Paint: true})
+	m := sh.Editor().Draft().Mechanisms
+	if len(m) != 1 || m[0].Valve != (sim.Pos{X: 5, Y: 2}) || len(m[0].Gates) != 2 {
+		t.Fatalf("pasted mechanisms %+v", m)
+	}
+}
