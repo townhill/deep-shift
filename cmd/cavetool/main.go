@@ -3,12 +3,14 @@
 //
 //	cavetool validate [FILE...]             validate cave files (default: the embedded caves)
 //	cavetool show FILE                      print a cave's summary and ASCII grid
+//	cavetool fmt [-check] FILE...           rewrite cave files in the canonical layout
 //	cavetool replay [-cave FILE] [-print-expect] [-trace] REPLAY...
 //	                                        run replays, print the final state and
 //	                                        check each replay's expect block
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -28,6 +30,9 @@ func main() {
 const usage = `usage:
   cavetool validate [FILE...]      validate cave files (default: the embedded caves)
   cavetool show FILE               print a cave's summary and ASCII grid
+  cavetool fmt [-check] FILE...    rewrite cave files in the canonical layout the
+                                   editor writes; -check only lists files that
+                                   differ and fails if there are any
   cavetool replay [-cave FILE] [-print-expect] [-trace] REPLAY...
                                    run replays and check their expect blocks;
                                    -trace prints events and the grid on every
@@ -45,6 +50,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		err = validate(args[1:], stdout)
 	case "show":
 		err = show(args[1:], stdout)
+	case "fmt":
+		err = format(args[1:], stdout, stderr)
 	case "replay":
 		err = runReplays(args[1:], stdout, stderr)
 	case "help", "-h", "-help", "--help":
@@ -120,6 +127,53 @@ func show(args []string, stdout io.Writer) error {
 	describe(stdout, args[0], l)
 	fmt.Fprintf(stdout, "state_hash=%s\n%s", s.StateHash(), s.ASCII())
 	return nil
+}
+
+// format rewrites cave files in the canonical layout (level.Draft.Encode).
+// It reads files with level.DecodeDraft, so a cave that does not validate yet
+// is still formatted; only the layout changes, never the content.
+func format(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("fmt", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	check := fs.Bool("check", false, "list files that are not in the canonical layout and fail if there are any, without changing them")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() == 0 {
+		return errors.New("no cave files given")
+	}
+	var errs []error
+	var differ []string
+	for _, name := range fs.Args() {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		d, err := level.DecodeDraft(name, data)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		out := d.Encode()
+		if bytes.Equal(out, data) {
+			continue
+		}
+		differ = append(differ, name)
+		if *check {
+			fmt.Fprintf(stdout, "not canonical: %s\n", name)
+			continue
+		}
+		if err := os.WriteFile(name, out, 0o644); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		fmt.Fprintf(stdout, "formatted %s\n", name)
+	}
+	if *check && len(differ) > 0 {
+		errs = append(errs, fmt.Errorf("%d file(s) not in the canonical layout; run cavetool fmt on them", len(differ)))
+	}
+	return errors.Join(errs...)
 }
 
 func runReplays(args []string, stdout, stderr io.Writer) error {

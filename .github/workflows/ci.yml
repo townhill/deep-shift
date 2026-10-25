@@ -65,6 +65,7 @@ jobs:
       - name: Validate caves and golden replays (CLI, no display)
         run: |
           go run ./cmd/cavetool validate
+          go run ./cmd/cavetool fmt -check assets/levels/*.json
           go run ./cmd/cavetool replay testdata/replays/*.json
 
       - name: Simulation benchmark (recorded, not gated)
