@@ -1,11 +1,14 @@
 package game
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/townhill/deep-shift/internal/editor"
 	"github.com/townhill/deep-shift/internal/level"
+	"github.com/townhill/deep-shift/internal/replay"
 	"github.com/townhill/deep-shift/internal/sim"
 )
 
@@ -23,8 +26,9 @@ const (
 )
 
 // Shell is the whole app above the simulation: the title menu, the cave
-// select list, the playlist being played, and the cave editor with its
-// playtests. Pure Go and display-free, like the rest of this package.
+// select list (the built-in caves and the player's own), the playlist being
+// played, and the cave editor with its playtests. Pure Go and display-free,
+// like the rest of this package.
 //
 // Menu keys: Up/Down move the selection, Space/Enter (Interact) choose, Esc
 // (Pause) goes back. While playing, C (Controls.Menu) opens the cave list
@@ -39,7 +43,9 @@ type Shell struct {
 
 	screen      Screen
 	cursor      int
+	caveItems   []caveItem // the cave list, rebuilt each time it opens
 	playlist    *Playlist
+	playItems   []caveItem // the caves in the playlist, in its order
 	completed   map[string]bool
 	prev        Controls
 	waitRelease bool
@@ -51,6 +57,25 @@ type Shell struct {
 	editItems []editItem
 	editor    *editor.Editor
 	playtest  *Session
+}
+
+// caveItem is one entry of the cave list: a built-in cave or one of the
+// player's own. One of the player's caves that cannot be played is still
+// listed, saying why, so a cave saved with problems is not just missing.
+type caveItem struct {
+	level *level.Level // nil when the cave cannot be played
+	path  string       // the file of one of the player's caves; empty for a built-in cave
+	label string
+	why   string // why the cave cannot be played
+}
+
+// same reports whether a and b are the same cave, across rebuilds of the
+// list: the same file, or the same built-in level.
+func (a caveItem) same(b caveItem) bool {
+	if a.path != "" || b.path != "" {
+		return a.path == b.path
+	}
+	return a.level == b.level
 }
 
 // editItem is one cave the edit list offers.
@@ -101,13 +126,36 @@ func (s *Shell) EnableEditor(layout editor.Layout, storage editor.Storage) {
 	s.editorOn, s.layout, s.storage = true, layout, storage
 }
 
-// Play starts levels[i] directly, skipping the menus (the -cave flag).
+// Play starts levels[i] directly, skipping the menus (the -cave flag). N
+// then moves through the built-in caves.
 func (s *Shell) Play(i int) error {
-	p, err := NewPlaylist(s.levels, i, s.viewW, s.viewH)
+	items := make([]caveItem, len(s.levels))
+	for j, l := range s.levels {
+		items[j] = caveItem{level: l, label: l.Title}
+	}
+	return s.playFrom(items, i)
+}
+
+// playFrom starts a playlist of the playable caves in items at items[i].
+func (s *Shell) playFrom(items []caveItem, i int) error {
+	var levels []*level.Level
+	var play []caveItem
+	start := 0
+	for j, it := range items {
+		if it.level == nil {
+			continue
+		}
+		if j == i {
+			start = len(levels)
+		}
+		levels = append(levels, it.level)
+		play = append(play, it)
+	}
+	p, err := NewPlaylist(levels, start, s.viewW, s.viewH)
 	if err != nil {
 		return err
 	}
-	s.playlist = p
+	s.playlist, s.playItems = p, play
 	s.change(ScreenPlaying)
 	return nil
 }
@@ -183,8 +231,8 @@ func (s *Shell) updateTitle(c, prev Controls) {
 		case titlePlay:
 			s.start(0)
 		case titleChoose:
+			s.openCaveList()
 			s.cursor = 0
-			s.change(ScreenCaves)
 		case titleEdit:
 			s.openEditList()
 		}
@@ -192,24 +240,88 @@ func (s *Shell) updateTitle(c, prev Controls) {
 }
 
 func (s *Shell) updateCaves(c, prev Controls) {
+	n := len(s.caveItems)
 	switch {
 	case c.Up && !prev.Up:
-		s.cursor = (s.cursor + len(s.levels) - 1) % len(s.levels)
+		s.cursor = (s.cursor + n - 1) % n
 	case c.Down && !prev.Down:
-		s.cursor = (s.cursor + 1) % len(s.levels)
+		s.cursor = (s.cursor + 1) % n
 	case c.Interact && !prev.Interact:
-		s.start(s.cursor)
+		it := s.caveItems[s.cursor]
+		if it.level == nil {
+			s.notice = "Cannot play " + it.why
+			return
+		}
+		if err := s.playFrom(s.caveItems, s.cursor); err != nil {
+			s.notice = fmt.Sprintf("Cannot open %s: %v", it.level.ID, err)
+		}
 	case c.Pause:
 		s.cursor = titleChoose
 		s.change(ScreenTitle)
 	}
 }
 
+// openCaveList lists the built-in caves, then the player's own caves from
+// the editor's storage, read afresh so caves saved since appear.
+func (s *Shell) openCaveList() {
+	s.caveItems = s.caveItems[:0]
+	used := map[string]string{} // cave id → what already uses it
+	for _, l := range s.levels {
+		s.caveItems = append(s.caveItems, caveItem{level: l, label: l.Title})
+		used[l.ID] = "a built-in cave"
+	}
+	var notice string
+	var files []editor.File
+	if s.storage != nil {
+		var err error
+		if files, err = s.storage.List(); err != nil {
+			notice = "Cannot list your caves: " + err.Error()
+		}
+	}
+	for _, f := range files {
+		name := filepath.Base(f.Path)
+		it := caveItem{path: f.Path, label: f.Draft.Title}
+		if f.Err != nil {
+			it.label, it.why = name, name+": the file cannot be read"
+		} else {
+			l, err := level.Parse(name, f.Draft.Encode())
+			var ve *level.ValidationError
+			switch {
+			case errors.As(err, &ve):
+				it.why = fmt.Sprintf("%s: %s; fix it in the Cave editor", name, problems(len(ve.Problems)))
+			case err != nil:
+				it.why = name + ": " + err.Error()
+			case used[l.ID] != "":
+				it.why = fmt.Sprintf("%s: its id %q is taken by %s", name, l.ID, used[l.ID])
+			default:
+				it.level = l
+				used[l.ID] = name
+			}
+		}
+		s.caveItems = append(s.caveItems, it)
+	}
+	s.change(ScreenCaves)
+	s.notice = notice
+}
+
+func problems(n int) string {
+	if n == 1 {
+		return "1 problem"
+	}
+	return fmt.Sprintf("%d problems", n)
+}
+
 func (s *Shell) updatePlaying(c Controls) {
 	session := s.playlist.Session()
 	if c.Menu && (session.Paused() || session.Ended()) {
-		s.cursor = s.playlist.Index()
-		s.change(ScreenCaves)
+		current := s.playItems[s.playlist.Index()]
+		s.openCaveList()
+		s.cursor = 0
+		for i, it := range s.caveItems {
+			if it.same(current) {
+				s.cursor = i
+			}
+		}
 		return
 	}
 	s.playlist.Update(c)
@@ -312,6 +424,40 @@ func (s *Shell) start(i int) {
 	}
 }
 
+// FinishedAttempt reports an attempt that has just ended (completed or
+// died), once per attempt, with its replay for the platform layer to save.
+//
+// The replay is nil for a playtest of a cave with unsaved changes: no cave
+// file matches it, so nothing could re-run it. A replay of one of the
+// player's own caves, played from the list or playtested, names the cave
+// file, since cavetool finds only the built-in caves by id.
+func (s *Shell) FinishedAttempt() (*replay.Replay, bool) {
+	var session *Session
+	var path string
+	switch s.screen {
+	case ScreenPlaying:
+		session, path = s.playlist.Session(), s.playItems[s.playlist.Index()].path
+	case ScreenPlaytest:
+		session, path = s.playtest, s.editor.Path()
+	default:
+		return nil, false
+	}
+	r, ok := session.FinishedReplay()
+	if !ok {
+		return nil, false
+	}
+	if s.screen == ScreenPlaytest {
+		if path == "" || s.editor.Dirty() {
+			return nil, true
+		}
+		r.Description = strings.Replace(r.Description, "Recorded in the app", "Recorded in an editor playtest", 1)
+	}
+	if path != "" {
+		r.Description += fmt.Sprintf(" Cave file: %s (cavetool replay needs it as -cave).", path)
+	}
+	return r, true
+}
+
 func (s *Shell) change(to Screen) {
 	s.screen = to
 	s.waitRelease = true
@@ -353,7 +499,7 @@ func (s *Shell) TextEntry() bool {
 
 // Completed reports whether the cave with this id was completed during
 // this run of the app. Progress is not saved between runs; playtests do not
-// count.
+// count, but the player's own caves played from the list do.
 func (s *Shell) Completed(id string) bool { return s.completed[id] }
 
 // MenuView is the text of a menu screen, for the renderer.
@@ -415,15 +561,21 @@ func (s *Shell) caveMenu() MenuView {
 		Footer: "Up/Down: choose   Space/Enter: play   Esc: back   M: sound   B: music",
 	}
 	done := 0
-	for i, l := range s.levels {
-		if i == s.campaign {
+	for i, it := range s.caveItems {
+		switch {
+		case i == s.campaign && i < len(s.levels):
 			v.Entries = append(v.Entries, MenuEntry{Text: "Extras", Heading: true})
+		case i == len(s.levels):
+			v.Entries = append(v.Entries, MenuEntry{Text: "My caves", Heading: true})
 		}
-		label := fmt.Sprintf("%d  %s", i+1, l.Title)
-		if i >= s.campaign {
-			label = "   " + l.Title
+		label := "   " + it.label
+		if i < s.campaign {
+			label = fmt.Sprintf("%d  %s", i+1, it.label)
 		}
-		if s.completed[l.ID] {
+		switch {
+		case it.level == nil:
+			label += "   (cannot play)"
+		case s.completed[it.level.ID]:
 			label += "   (done)"
 			if i < s.campaign {
 				done++

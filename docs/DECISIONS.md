@@ -829,7 +829,7 @@ and water are stable, with tests for movement order, collision and reset.
     the editor ignores input until every key is released. So the P that ends a playtest never starts
     another.
 - **Playtests are not saved as replays.** The cave may not be saved, and a replay is only useful beside its
-  cave file. Replays of saved, unchanged caves are milestone 2.
+  cave file. Replays of saved, unchanged caves are milestone 2 (done: D-051).
 - **Playtests are not campaign progress.** They never mark a cave "(done)".
 
 ## D-012 addendum: `internal/editor` (2026-10-25)
@@ -867,6 +867,55 @@ and water are stable, with tests for movement order, collision and reset.
   - the floor brush's slot was hard to see against the bar, so every slot now has a frame.
 - This is Linux/OpenGL evidence only, not a Mac test. The trackpad, Retina scaling, the Command key and
   wheel direction on macOS still need a Mac.
+
+## D-050: My caves in the cave list (editor milestone 2)
+
+- **What it is.** The cave list gains a "My caves" section after the extras: the caves in the editor's
+  folder (`-caves-dir`). The folder is read afresh each time the list opens, so a cave saved a moment ago is
+  there.
+- **Playable caves play like any other.**
+  - N moves through the built-in caves, then the player's own, then wraps.
+  - Completing one marks it "(done)" for the run, as for any cave. The campaign count is unchanged.
+  - C from the pause, completion or death screen returns to the list with the cave just played selected.
+    The match is by file, since the list is rebuilt.
+- **A cave that cannot be played is still listed,** as "(cannot play)", so a cave saved with problems is not
+  silently missing. Choosing it says why:
+  - the file cannot be read;
+  - it has problems to fix in the Cave editor (with the count);
+  - its id is taken by a built-in cave, or by an earlier file in the folder.
+- **Why ids must be unique.** Completion marks and replays both name caves by id, so two caves sharing one
+  would be confused. The first in file-name order plays, and later ones say which file has the id.
+- **Validation.** A file is validated the same way as everywhere else: `level.Parse` of its canonical
+  encoding. That gives the same result and checksum as parsing the file itself (D-046).
+
+## D-051: Replays of playtests and of the player's caves
+
+- **Playtests are recorded when the cave is saved and unchanged.** Then a cave file matches the replay
+  exactly, and it can be re-run. A playtest of a new cave, a copy not yet saved, or a cave changed since its
+  last save is not recorded: the app says "Playtest not recorded: save the cave first (Cmd+S)". This
+  completes what D-049 left for milestone 2.
+- **The shell decides.** `Shell.FinishedAttempt` replaces the platform layer's own playtest rule, so the
+  rule is tested without a display.
+- **Replays of the player's caves name the cave file,** whether played from the list or playtested.
+  `cavetool replay` finds only built-in caves by id, so it needs the file as `-cave`.
+  - A playtest replay starts "Recorded in an editor playtest".
+  - Tests re-run both kinds with `replay.Run` against the saved file and check their expect blocks.
+  - In the headless capture, `cavetool replay -cave` matched a playtest replay the app saved.
+
+## D-014 addendum: editor milestone 2 headless capture (2026-10-25)
+
+- The by-hand `exp/vmhost` setup (Linux, Xvfb, Mesa software GL; nothing committed) used a scratch caves
+  folder. It held a copy of cave 01 under a new id, a cave with an impossible quota, and a one-step cave.
+- **The cave list:**
+  - "My caves" follows the extras, with the cave with problems marked "(cannot play)";
+  - choosing it showed "Cannot play wip.json: 1 problem; fix it in the Cave editor";
+  - choosing the copy played it, its title in the HUD.
+- **Playtests:**
+  - a playtest of the saved one-step cave showed "Replay saved: one_step-complete-….json", and `cavetool
+    replay -cave` matched the file;
+  - after an edit, the next playtest showed "Playtest not recorded: save the cave first (Cmd+S)", and no
+    second file was written.
+- This is Linux/OpenGL evidence only, not a Mac test.
 
 ## D-055: Arcade music (owner decision)
 
