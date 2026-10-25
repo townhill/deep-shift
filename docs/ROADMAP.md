@@ -219,6 +219,8 @@ pause behaviour ([D-045](DECISIONS.md#d-045-arcade-music-owner-decision)). No ru
   pin its length, its silent seam and its peak below the cues (Cloud)
 - [x] B turns the music off and on; M mutes it with everything else; a paused cave holds it; `-no-music`
   starts with it off. The rules and their notices are tested headlessly (Cloud)
+- [x] In a headless capture, the app's music stream matched the loop sample for sample and wrapped at 32 s;
+  B, M and Esc stopped it and resumed it where it stopped (Linux/OpenGL only; D-014 addendum)
 - [x] The HUD hint and both menu footers name M and B, and fit their lines (Cloud)
 - [ ] **Mac:** listen to it (checklist below)
 

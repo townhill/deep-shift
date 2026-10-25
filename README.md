@@ -42,7 +42,7 @@ caves, art, names and rules are original to this project.
 | Every cave can be completed; cave 05 has two distinct routes; cave 01 cannot hurt the player | Golden replays plus tests on each route's events and water state | Verified (Linux); CI runs them on macOS arm64 |
 | Menus: title, cave list, keys that chose an entry never leak into the game | `internal/game` shell tests; headless capture | Verified (Linux) |
 | Sound: twelve original synthesised cues, one per kind of event per tick | `internal/sfx` tests; in a headless capture the app's audio streams matched the synthesised cues sample for sample | Verified as data (Linux VM guest); **not yet heard on a Mac** |
-| Music: an original 32 s arcade loop; B turns it off and on, M mutes it with everything else, a paused cave holds it | `internal/sfx` tests (loop length, silent seam, peak below the cues), `internal/game` tests of the keys | Verified as data (Linux); **not yet heard on a Mac** |
+| Music: an original 32 s arcade loop; B turns it off and on, M mutes it with everything else, a paused cave holds it | `internal/sfx` tests (loop length, silent seam, peak below the cues), `internal/game` tests of the keys; in a headless capture the app's music stream matched the loop sample for sample, wrapped at 32 s, and B, M and Esc paused and resumed it | Verified as data (Linux VM guest); **not yet heard on a Mac** |
 | A finished attempt is saved as a replay that reproduces it exactly | Session tests; app run headlessly (below) | Verified (Linux) |
 | Cave files validate; broken caves give useful errors | `internal/level` tests, `cavetool validate` | Verified |
 | macOS arm64 / amd64 executables compile | Cross-compile from Linux; native build on CI's macOS runner | Compile-only |

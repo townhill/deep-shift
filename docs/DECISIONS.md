@@ -754,3 +754,33 @@ ambience/music".
 - **HUD:** the controls hint now names B. To fit, its gaps shrank to two spaces. It is 78 of the 79
   characters a HUD line holds (a test checks the hint and both menu footers), so another key needs a
   shorter hint or a real UI font (F-4).
+
+## D-014 addendum: arcade music headless capture (2026-10-25)
+
+- A fresh by-hand `exp/vmhost` driver ran the unmodified app (build `bbbf36c`, guest tag
+  `ebitenginevmguest`) under Xvfb with Mesa software GL. Nothing was committed. The host pulled each audio
+  stream at real-time pace (800 frames per update) and compared it with `sfx.MusicPCM()` exactly.
+- **The loop:** a single 48 kHz stream opened on the first update, on the title, and played on into a
+  cave.
+  - All 1,840,000 frames read (38 s) matched the loop. The stream starts at the loop's first sample and
+    wraps at exactly 32 s.
+  - The loop's first and last samples are exactly zero, so the seam has no step at all.
+- **B, Esc and M** each stopped the stream outright: zero frames for a second. Pressing the key again
+  resumed it from the frame where it stopped, not from the start, both on the title and in cave 01.
+  - Esc paused and resumed the music with the cave.
+  - B and M showed "Music off (B: on)", "Music on", "Sound off (M: on)" and "Sound on" in the HUD.
+  - M pauses the music player rather than turning its volume down.
+- **Flags:**
+  - `-no-music` opened no stream until B, then the loop from its start.
+  - `-no-audio` opened no streams at all, and B and M both said "No sound: started with -no-audio".
+- **Frames:** the title footer and the cave's hint line, the longest at 78 characters, draw in full, with
+  10 px and 17 px to spare.
+- **Seen, not changed:**
+  - On the title and cave list, M and B give no text notice, because notices are a HUD prompt; the music
+    starting or stopping is the feedback.
+  - The loop's largest sample-to-sample step (0.14, at 19.5 s) is a pulse-wave edge at a note's start.
+    Steps that large are common across the loop, as square waves have, rather than a lone click.
+- **Limits:** the host sets the pace of the audio and the guest has no output buffer. So this shows the
+  app never rewinds or seeks the music on resume, but not how a real device sounds at a pause. No cue
+  played in these runs, so M was checked against the music only. Linux/OpenGL evidence only; the music has
+  not been heard on a Mac.
