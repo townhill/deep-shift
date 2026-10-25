@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/townhill/deep-shift/internal/editor"
 	"github.com/townhill/deep-shift/internal/level"
@@ -449,10 +450,10 @@ func (s *Shell) FinishedAttempt() (*replay.Replay, bool) {
 		if path == "" || s.editor.Dirty() {
 			return nil, true
 		}
-		r.Description += " (an editor playtest)"
+		r.Description = strings.Replace(r.Description, "Recorded in the app", "Recorded in an editor playtest", 1)
 	}
 	if path != "" {
-		r.Description += fmt.Sprintf(" Cave file: %s; re-run with cavetool replay -cave <cave file> <replay file>.", path)
+		r.Description += fmt.Sprintf(" Cave file: %s (cavetool replay needs it as -cave).", path)
 	}
 	return r, true
 }

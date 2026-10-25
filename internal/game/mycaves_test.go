@@ -223,7 +223,8 @@ func TestPlaytestsOfSavedUnchangedCavesAreRecorded(t *testing.T) {
 	editorTap(sh, editor.Input{Save: true})
 	path := filepath.Join(dir, "one_step.json")
 	r, ended := playtestToTheEnd(t, sh)
-	if !ended || r == nil || !strings.Contains(r.Description, "(an editor playtest) Cave file: "+path) {
+	if !ended || r == nil || !strings.HasPrefix(r.Description, "Recorded in an editor playtest: the player completed") ||
+		!strings.HasSuffix(r.Description, " Cave file: "+path+" (cavetool replay needs it as -cave).") {
 		t.Fatalf("a saved cave's playtest: ended %v, replay %+v", ended, r)
 	}
 	l, err := level.Parse(path, mustRead(t, path))
