@@ -125,11 +125,15 @@ func (r *Renderer) drawWorld(f game.Frame) {
 		op.GeoM.Translate(0, TileSize*0.55)
 		op.ColorScale.Scale(1, 0.45, 0.45, 1)
 	case game.DeathCaught:
-		// Shrunk to the middle of the cell and tinted violet, like the
-		// crawler that caught them.
+		// Shrunk to the middle of the cell and tinted like the creature that
+		// caught them: violet for a crawler, amber for a glimmer.
 		op.GeoM.Scale(0.7, 0.7)
 		op.GeoM.Translate(TileSize*0.15, TileSize*0.15)
-		op.ColorScale.Scale(0.85, 0.45, 0.85, 1)
+		if f.Killer == sim.OccupantGlimmer {
+			op.ColorScale.Scale(1, 0.75, 0.35, 1)
+		} else {
+			op.ColorScale.Scale(0.85, 0.45, 0.85, 1)
+		}
 	}
 	px, py := math.Round(f.PlayerX*TileSize-camX), math.Round(f.PlayerY*TileSize-camY)
 	op.GeoM.Translate(px, py)
@@ -176,7 +180,7 @@ func (r *Renderer) drawWater(f game.Frame, x0, y0 int, camX, camY float64) {
 	}
 }
 
-// occupantSprite returns the sprite for a boulder, crystal or crawler (by
+// occupantSprite returns the sprite for a boulder, crystal or creature (by
 // its facing). The player is drawn separately.
 func occupantSprite(o sim.Occupant, facing sim.Dir) (sprites.Kind, bool) {
 	switch o {
@@ -194,6 +198,16 @@ func occupantSprite(o sim.Occupant, facing sim.Dir) (sprites.Kind, bool) {
 			return sprites.CrawlerRight, true
 		}
 		return sprites.CrawlerUp, true
+	case sim.OccupantGlimmer:
+		switch facing {
+		case sim.DirDown:
+			return sprites.GlimmerDown, true
+		case sim.DirLeft:
+			return sprites.GlimmerLeft, true
+		case sim.DirRight:
+			return sprites.GlimmerRight, true
+		}
+		return sprites.GlimmerUp, true
 	}
 	return 0, false
 }

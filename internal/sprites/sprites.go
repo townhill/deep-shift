@@ -8,9 +8,10 @@
 // player, a barred door versus an open, chevron-marked doorway for the exit
 // states, a round shaded rock for boulders, a riveted slab versus a raised
 // one for sluice gates, a wheel whose spokes turn 45 degrees for valves,
-// wave lines that mark deep water, and a many-legged crawler whose head and
-// feelers point the way it faces. Pure Go (no Ebitengine), so it is
-// unit-tested headlessly.
+// wave lines that mark deep water, a many-legged crawler whose head and
+// feelers point the way it faces, and a broad-winged glimmer with a crystal
+// shard on its back whose head and antennae do the same. Pure Go (no
+// Ebitengine), so it is unit-tested headlessly.
 package sprites
 
 import (
@@ -26,9 +27,10 @@ const Size = 32
 type Kind int
 
 // Sprite kinds. Terrain kinds are opaque; Crystal, Player, Boulder and the
-// crawlers are drawn over terrain and have transparent backgrounds; Waves is
-// a translucent pattern drawn over deep water. The four crawler kinds are
-// one drawing rotated to face up, down, left and right.
+// creatures are drawn over terrain and have transparent backgrounds; Waves
+// is a translucent pattern drawn over deep water. The four crawler kinds are
+// one drawing rotated to face up, down, left and right, and so are the four
+// glimmer kinds.
 const (
 	Empty Kind = iota
 	Earth
@@ -47,13 +49,18 @@ const (
 	CrawlerDown
 	CrawlerLeft
 	CrawlerRight
+	GlimmerUp
+	GlimmerDown
+	GlimmerLeft
+	GlimmerRight
 	KindCount
 )
 
 func (k Kind) String() string {
 	return [...]string{"empty", "earth", "wall", "exit-sealed", "exit-open", "crystal", "player", "boulder",
 		"gate-closed", "gate-open", "valve-shut", "valve-open", "waves",
-		"crawler-up", "crawler-down", "crawler-left", "crawler-right"}[k]
+		"crawler-up", "crawler-down", "crawler-left", "crawler-right",
+		"glimmer-up", "glimmer-down", "glimmer-left", "glimmer-right"}[k]
 }
 
 // Generate draws sprite k.
@@ -90,6 +97,10 @@ func Generate(k Kind) *image.RGBA {
 		up := image.NewRGBA(img.Bounds())
 		drawCrawler(up)
 		rotate(img, up, int(k-CrawlerUp))
+	case GlimmerUp, GlimmerDown, GlimmerLeft, GlimmerRight:
+		up := image.NewRGBA(img.Bounds())
+		drawGlimmer(up)
+		rotate(img, up, int(k-GlimmerUp))
 	}
 	return img
 }
@@ -480,6 +491,76 @@ func drawCrawler(img *image.RGBA) {
 	eye := rgb(250, 238, 120)
 	rect(img, 12, 7, 13, 8, eye)
 	rect(img, 18, 7, 19, 8, eye)
+}
+
+var (
+	wingColour  = rgb(226, 160, 58)
+	glimmerBody = rgb(92, 60, 40)
+	shardColour = rgb(120, 230, 240)
+)
+
+// drawGlimmer draws the glimmer facing up, seen from above: four broad
+// wings with a dark band along their edges, a slender body, a head with
+// glowing eyes and two knobbed antennae, and a crystal shard on its back,
+// the crystals it holds. Its outline (wide wings, no legs) reads as a
+// different creature from the crawler.
+func drawGlimmer(img *image.RGBA) {
+	outline := shade(wingColour, -110)
+	wing := func(cx, cy, rx, ry float64) {
+		for y := range Size {
+			for x := range Size {
+				dx, dy := (float64(x)-cx)/rx, (float64(y)-cy)/ry
+				d := dx*dx + dy*dy
+				switch {
+				case d > 1:
+				case d > 0.78:
+					img.SetRGBA(x, y, outline)
+				case d > 0.5:
+					img.SetRGBA(x, y, shade(wingColour, -46)) // band
+				default:
+					img.SetRGBA(x, y, shade(wingColour, int((-dx-dy)*24)))
+				}
+			}
+		}
+	}
+	wing(8.5, 12, 7, 6)    // forewings
+	wing(22.5, 12, 7, 6)   //
+	wing(10, 22.5, 6, 5.5) // hindwings
+	wing(21, 22.5, 6, 5.5) //
+	// Antennae: thin lines from the head to a knob on each side.
+	for t := range 5 {
+		img.SetRGBA(14-t, 5-t, glimmerBody)
+		img.SetRGBA(17+t, 5-t, glimmerBody)
+	}
+	disc(img, 9, 1, 1, glimmerBody)
+	disc(img, 22, 1, 1, glimmerBody)
+	// Body and head.
+	for y := range Size {
+		for x := range Size {
+			dx, dy := (float64(x)-15.5)/3, (float64(y)-18)/10
+			if dx*dx+dy*dy <= 1 {
+				img.SetRGBA(x, y, shade(glimmerBody, int(-dx*30)))
+			}
+		}
+	}
+	disc(img, 15, 7, 3, glimmerBody)
+	disc(img, 16, 7, 3, glimmerBody)
+	eye := rgb(250, 238, 120)
+	img.SetRGBA(14, 6, eye)
+	img.SetRGBA(17, 6, eye)
+	// The shard: a small rhombus on the back, lit on its upper left facet.
+	for y := 12; y <= 22; y++ {
+		half := 3 - abs(float64(y)-17)*3/5
+		for x := 13; x <= 18; x++ {
+			if dx := abs(float64(x) - 15.5); dx <= half {
+				c := shardColour
+				if float64(x) > 15.5 || y > 17 {
+					c = shade(shardColour, -60)
+				}
+				img.SetRGBA(x, y, c)
+			}
+		}
+	}
 }
 
 // drawWaves draws translucent wave lines, the shape cue for deep water.
