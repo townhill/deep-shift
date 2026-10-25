@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townhill/deep-shift/internal/level"
 	"github.com/townhill/deep-shift/internal/sim"
 )
 
@@ -217,7 +218,7 @@ func TestClipCarriesToAnotherCave(t *testing.T) {
 	b.SetClip(clip)
 	tap(b, Input{Paste: true})
 	click(b, pos(5, 2))
-	if len(b.doc.mechanisms) != 1 || b.doc.mechanisms[0].Valve != pos(5, 2) || b.doc.formatVersion != 4 {
+	if len(b.doc.mechanisms) != 1 || b.doc.mechanisms[0].Valve != pos(5, 2) || b.doc.formatVersion != level.FormatVersion {
 		t.Fatalf("mechanisms %+v", b.doc.mechanisms)
 	}
 	if err := checkInvariants(b); err != nil {
