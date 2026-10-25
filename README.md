@@ -28,8 +28,8 @@ caves, art, names and rules are original to this project.
 > 5. "The Sluice" (water and gravity, two ways through).
 >
 > There's a title menu and a cave list, pause/restart, a HUD, sound effects, a performance overlay, and
-> automatic replays of finished attempts. A **cave editor** paints, validates, saves and playtests caves.
-> Progress is not saved between runs. See [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
+> automatic replays of finished attempts. A **cave editor** paints, validates, saves and playtests caves,
+> and the caves you make appear in the cave list under "My caves". Progress is not saved between runs. See [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
 
 ## What has and has not been verified
 
@@ -47,6 +47,7 @@ caves, art, names and rules are original to this project.
 | Cave files validate; broken caves give useful errors | `internal/level` tests, `cavetool validate` | Verified |
 | Cave editor: painting, boxes, undo, resizing, settings, saving (never replacing a file without asking), the format version kept, embedded caves saved byte for byte | `internal/editor` tests (random-input invariants, mutation-checked), `cavetool fmt -check` in CI | Verified (Linux); CI runs them on macOS arm64 |
 | Editor playtests play the cave in a real session; P goes back and forth | `internal/game` shell tests (cave 01's golden replay completes a copy in a playtest); headless capture | Verified (Linux); **not yet used on a Mac** |
+| "My caves" in the cave list; caves that cannot be played say why; playtests of saved caves are recorded and re-run against the cave file | `internal/game` shell tests (mutation-checked); headless capture with `cavetool replay -cave` | Verified (Linux); **not yet used on a Mac** |
 | macOS arm64 / amd64 executables compile | Cross-compile from Linux; native build on CI's macOS runner | Compile-only |
 | `DeepShift.app` bundle builds and is ad-hoc signed | `scripts/build-macos-app.sh` on CI's macOS runner | Packaging checked in CI; **launch from Finder not yet verified** |
 | Window, keyboard, rendering, HUD on a real Mac | Owner ran `go run ./cmd/deepshift` on a Mac: "ok as a first pass" (Phase 1 build) | First pass only; **menus, sound, caves 01–05, boulders, water and crawlers not yet played on a Mac** |
@@ -187,9 +188,14 @@ cave id (edited as a copy) or a cave file (saved back to it).
 The editor checks the cave after every change, using the same loader as the game. Problems are listed in
 the bottom bar, and the cells they concern are outlined in red. A cave with problems can still be saved,
 but it cannot be playtested until they are fixed. New caves are saved as
-`~/Library/Application Support/Deep Shift/caves/<id>.json`; `-caves-dir <dir>` changes the folder. Play a
-saved cave with `go run ./cmd/deepshift -cave <file>`. Valves and gates cannot be placed yet (caves that
-have them keep them).
+`~/Library/Application Support/Deep Shift/caves/<id>.json`; `-caves-dir <dir>` changes the folder. They
+appear in **Choose a cave** under "My caves", after the built-in caves; one that cannot be played yet is
+listed as "(cannot play)" and says why. Valves and gates cannot be placed yet (caves that have them keep
+them).
+
+A playtest of a saved, unchanged cave is saved as a replay like any finished attempt; a playtest of a cave
+with unsaved changes is not. Replays of your own caves name the cave file. Re-run one with
+`go run ./cmd/cavetool replay -cave <cave file> <replay>`.
 
 ## Develop and test (any OS, no display needed)
 

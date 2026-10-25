@@ -268,6 +268,34 @@ Choose "Cave editor" on the title menu, or run `go run ./cmd/deepshift -edit new
 - [ ] Copy Crawler Warren: the valve's link to its gate is drawn; painting over the valve outlines the gate
   in red
 
+## Phase 5 — The cave editor, milestone 2 (delivered in the cloud; Mac playtest pending)
+
+The decisions are D-050 and D-051. No rule changes: rule version 4, cave format version 4, and every golden
+replay unchanged.
+
+- [x] The cave list shows "My caves" from the editor's folder, read afresh each time. Playable caves join
+  the playlist after the built-in ones, and completing one marks it done
+  ([D-050](DECISIONS.md#d-050-my-caves-in-the-cave-list-editor-milestone-2)) (Cloud)
+- [x] Caves that cannot be played are listed, and say why: unreadable, problems, or an id that is taken.
+  Mutation-checked (Cloud)
+- [x] A playtest is recorded only when its cave is saved and unchanged. Replays of the player's caves name
+  the cave file, and re-run against it
+  ([D-051](DECISIONS.md#d-051-replays-of-playtests-and-of-the-players-caves)) (Cloud)
+- [x] Seen in a headless capture (Linux/OpenGL only,
+  [D-014 addendum](DECISIONS.md#d-014-addendum-editor-milestone-2-headless-capture-2026-10-25))
+- [ ] **Mac:** the checklist below
+
+### Mac playtest checklist for editor milestone 2
+
+- [ ] Save a new cave in the editor, then open "Choose a cave": it is under "My caves"
+- [ ] Choose it: it plays; N afterwards goes on through your caves and wraps to cave 01; finishing it marks
+  it "(done)"
+- [ ] Save a cave with a problem (cover the exit): it is listed "(cannot play)", and choosing it says what to
+  fix
+- [ ] Playtest a saved cave to the end: "Replay saved: …" appears. `go run ./cmd/cavetool replay -cave
+  <cave file> <replay>` reports "matches expect block"
+- [ ] Change the cave, playtest it to the end: "Playtest not recorded: save the cave first (Cmd+S)"
+
 ## Follow-ups
 
 | ID | Follow-up | Why |
@@ -294,7 +322,7 @@ Choose "Cave editor" on the title menu, or run `go run ./cmd/deepshift -edit new
 | F-20 | Crawlers in campaign caves, and more kinds (a right-hand crawler, a fixed patrol) | Crawler Warren is the only cave with them; SPEC §8's regions call for creatures |
 | F-21 | An audible cue for a nearby crawler | Walking crawlers are silent (D-044), so a threat out of view cannot be heard; needs care not to become noise |
 | F-22 | Remaining Phase 5 items: structural supports, local preferences, a visual theme | SPEC §11 Phase 5; not started (D-040). The editor's first milestone is done (D-045) |
-| F-23 | Editor milestone 2: your caves in the cave list ("My caves"); replays of playtests of saved, unchanged caves | D-045 plan; playtests are not saved yet (D-049) |
+| F-23 | ~~Editor milestone 2: your caves in the cave list ("My caves"); replays of playtests of saved, unchanged caves~~ | Done (D-050, D-051) |
 | F-24 | Editor milestone 3: valve and gate brushes with linking; a "reachable from the start" overlay; flood fill; copy and paste | D-045 plan; caves with mechanisms can be edited, but new valves and gates cannot be placed (D-048) |
 | F-25 | Editor: "save as" / rename, metadata editing, and a full, readable problem list | D-048: a cave keeps its first file name, and the bar shows only the first problems |
 | F-26 | Move the headless editor capture into `tools/vmcapture` (F-6) | The editor sessions were scripted by hand (D-014 addendum) |
