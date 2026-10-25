@@ -729,7 +729,7 @@ func (e *Editor) Path() string { return e.path }
 func (e *Editor) Dirty() bool { return string(e.encoded) != string(e.saved) }
 
 // TextEntry reports whether a settings field is being typed into, so the
-// platform layer can keep letter shortcuts (F, M) out of the way.
+// platform layer can keep letter shortcuts (F, M, B) out of the way.
 func (e *Editor) TextEntry() bool { return e.settings.open && e.settings.editing }
 
 // Resume is called when the shell returns to the editor (after a playtest):
