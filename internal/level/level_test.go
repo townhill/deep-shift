@@ -83,6 +83,10 @@ func TestInvalidLevelsFailWithUsefulErrors(t *testing.T) {
 			d["format_version"] = 3
 			d["rows"] = []string{"#####", "#@*E#", "#→ ←#"}
 		}, want: []string{"rows[2]: symbol(s) '→' at x=1, '←' at x=3 need format_version 4 or later (this file is version 3)"}},
+		{name: "glimmer in a version 4 file", mutate: func(d map[string]any) {
+			d["format_version"] = 4
+			d["rows"] = []string{"#####", "#@*E#", "#▶ ◀#"}
+		}, want: []string{"rows[2]: symbol(s) '▶' at x=1, '◀' at x=3 need format_version 5 or later (this file is version 4)"}},
 		{name: "future format_version", mutate: func(d map[string]any) { d["format_version"] = 5 },
 			want: []string{"unsupported version 5", "reads format_version 1 to 4"}},
 		{name: "format_version zero", mutate: func(d map[string]any) { d["format_version"] = 0 },

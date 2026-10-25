@@ -62,10 +62,17 @@ const mechanismFormatVersion = 3
 // crawlerFormatVersion is the first version with crawlers.
 const crawlerFormatVersion = 4
 
+// glimmerFormatVersion is the first version with glimmers. It is newer than
+// FormatVersion until cave files can be written with them.
+const glimmerFormatVersion = 5
+
 // symbolVersion returns the first format version whose rows may contain r.
 func symbolVersion(r rune) int {
-	if sim.IsCrawlerSymbol(r) {
+	switch {
+	case sim.IsCrawlerSymbol(r):
 		return crawlerFormatVersion
+	case sim.IsGlimmerSymbol(r):
+		return glimmerFormatVersion
 	}
 	switch r {
 	case sim.SymbolBoulder:

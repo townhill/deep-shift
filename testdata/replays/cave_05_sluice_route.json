@@ -4,7 +4,7 @@
   "cave_id": "cave_05",
   "cave_checksum": "2a92efc1a81597bf8691f9884a26c2cb9b0690880190de4d2edb2d3b63892fa2",
   "seed": 20261022,
-  "rule_version": 4,
+  "rule_version": 5,
   "ticks": 358,
   "commands": [
     {"tick":0,"action":"down"},
@@ -83,7 +83,7 @@
     "final_tick": 338,
     "status": "complete",
     "collected": 6,
-    "final_hash": "3d11df7b79755cfb2c1e6d167c69b97b77cc24663536aee13d39b563cf05b740",
-    "trace_hash": "8118301b5dd3721dbdcae693c729fd9016c00b7024f1f84a366905bd77b5ab7c"
+    "final_hash": "894460f01a47b11a86beb7a9fd30f4a6c63e6926c848e36921d2a176e6c391b2",
+    "trace_hash": "99805bf49d34d6afe983696891899630d198548a154a7aca1a6bca335426f53b"
   }
 }

@@ -13,7 +13,9 @@ import "fmt"
 //     opened and closed by valves; deep water blocks the player.
 //   - 4: crawlers, wall-following creatures that catch the player, are
 //     crushed by falling objects and drown in water.
-const RuleVersion uint32 = 4
+//   - 5: glimmers, creatures that follow the wall on their right and shatter
+//     into crystals when a falling object lands on them.
+const RuleVersion uint32 = 5
 
 // TicksPerSecond is the provisional logical simulation rate (SPEC §5).
 const TicksPerSecond = 20
@@ -28,16 +30,20 @@ const MoveIntervalTicks = 4
 // the player's walking speed). Provisional; tune after Mac playtesting.
 const GravityIntervalTicks = 2
 
-// CrawlerIntervalTicks is the crawlers' cadence: they step on every tick
-// whose number is a multiple of this (one cell per 6 ticks, about 3.3 cells
-// per second, slower than the player). It is a multiple of
-// GravityIntervalTicks, so crawler steps fall on world-phase ticks.
+// CrawlerIntervalTicks is the creatures' cadence: crawlers and glimmers step
+// on every tick whose number is a multiple of this (one cell per 6 ticks,
+// about 3.3 cells per second, slower than the player). It is a multiple of
+// GravityIntervalTicks, so creature steps fall on world-phase ticks.
 // Provisional; tune after Mac playtesting.
 const CrawlerIntervalTicks = 6
 
 // WaterCapacity is the most water one cell holds. A full cell is deep water,
 // which the player cannot wade into. Provisional; see docs/PHYSICS.md.
 const WaterCapacity = 4
+
+// ShatterCrystals is the most crystals one shattered glimmer can leave: one
+// for each cell of the 3×3 block around it.
+const ShatterCrystals = 9
 
 // MaxDimension bounds cave width and height.
 const MaxDimension = 256
@@ -103,6 +109,7 @@ const (
 	OccupantCrystal
 	OccupantBoulder
 	OccupantCrawler
+	OccupantGlimmer
 	occupantCount
 )
 
@@ -118,6 +125,8 @@ func (o Occupant) String() string {
 		return "boulder"
 	case OccupantCrawler:
 		return "crawler"
+	case OccupantGlimmer:
+		return "glimmer"
 	}
 	return fmt.Sprintf("occupant(%d)", uint8(o))
 }
@@ -128,6 +137,10 @@ func (o Occupant) Rounded() bool { return o == OccupantBoulder || o == OccupantC
 
 // Falls reports whether gravity acts on this occupant: boulders and crystals.
 func (o Occupant) Falls() bool { return o == OccupantBoulder || o == OccupantCrystal }
+
+// Creature reports whether this occupant is a creature: a crawler or a
+// glimmer. Creatures have a facing, catch the player and drown in water.
+func (o Occupant) Creature() bool { return o == OccupantCrawler || o == OccupantGlimmer }
 
 // Cell is one grid square: a terrain, at most one occupant and a fluid
 // layer. Further layers are added as separate fields rather than by
@@ -142,10 +155,11 @@ type Cell struct {
 	Falling bool
 	// Water is the fluid layer: 0..WaterCapacity units. Water shares a cell
 	// with the player but never with a boulder or crystal. Water reaching a
-	// crawler drowns it by the end of the tick.
+	// creature drowns it by the end of the tick.
 	Water uint8
-	// Facing is metadata for crawlers: the direction the crawler last moved
-	// (or starts facing). DirNone for every other occupant.
+	// Facing is metadata for creatures (crawlers and glimmers): the
+	// direction the creature last moved (or starts facing). DirNone for
+	// every other occupant.
 	Facing Dir
 }
 
@@ -161,9 +175,9 @@ func (c Cell) HoldsWater() bool { return c.Terrain.Floor() && !c.Occupant.Falls(
 // into.
 func (c Cell) Deep() bool { return c.Water >= WaterCapacity }
 
-// OpenToCrawler reports whether a crawler may move into c: dry open floor
-// with no occupant other than the player (whom it catches).
-func (c Cell) OpenToCrawler() bool {
+// OpenToCreature reports whether a crawler or glimmer may move into c: dry
+// open floor with no occupant other than the player (whom it catches).
+func (c Cell) OpenToCreature() bool {
 	return c.Terrain.Floor() && c.Water == 0 && (c.Occupant == OccupantNone || c.Occupant == OccupantPlayer)
 }
 

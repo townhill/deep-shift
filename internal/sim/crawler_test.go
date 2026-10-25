@@ -231,7 +231,7 @@ func TestCrawlerValidation(t *testing.T) {
 		wantErr string
 	}{
 		{"no facing", func(c *Cave) { c.Cells[1].Facing = DirNone }, "must face up, down, left or right"},
-		{"facing on a boulder", func(c *Cave) { c.Cells[2] = Cell{Occupant: OccupantBoulder, Facing: DirUp} }, "only crawlers have a facing"},
+		{"facing on a boulder", func(c *Cave) { c.Cells[2] = Cell{Occupant: OccupantBoulder, Facing: DirUp} }, "only crawlers and glimmers have a facing"},
 		{"in water", func(c *Cave) { c.Cells[1].Water = 1 }, "cannot start in water"},
 		{"in earth", func(c *Cave) { c.Cells[1].Terrain = TerrainEarth }, "embedded in earth"},
 		{"in a wall", func(c *Cave) { c.Cells[1].Terrain = TerrainWall }, "crawler cannot occupy a wall"},
