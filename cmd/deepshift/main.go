@@ -2,7 +2,9 @@
 // the title menu, plays the embedded caves and renders them with Ebitengine.
 // No web view, no server. Each finished attempt (completed, crushed or
 // caught) is saved as a replay under the user config directory, for bug
-// reports. The cave editor saves the player's own caves beside it.
+// reports; an editor playtest is saved only when its cave is saved and
+// unchanged. The cave editor saves the player's own caves beside it, and the
+// cave list offers them under "My caves".
 //
 // Ebitengine is initialised only here and in internal/render, so `go test`
 // never needs a display. GUI behaviour is compile-only in cloud CI and still
@@ -194,8 +196,7 @@ func (a *app) Update() error {
 	} else {
 		a.shell.Update(readControls())
 	}
-	playtest := a.shell.Screen() == game.ScreenPlaytest
-	if a.shell.Screen() != game.ScreenPlaying && !playtest {
+	if a.shell.Screen() != game.ScreenPlaying && a.shell.Screen() != game.ScreenPlaytest {
 		return nil
 	}
 	s := a.shell.Session()
@@ -210,9 +211,13 @@ func (a *app) Update() error {
 	for _, cue := range s.TakeCues() {
 		a.sound.Play(cue)
 	}
-	// Playtests are not saved: the cave may not be saved yet, and a replay
-	// is only useful beside its cave file.
-	if r, ok := s.FinishedReplay(); ok && a.replayDir != "" && !playtest {
+	// The shell decides which attempts become replays: a playtest of a cave
+	// with unsaved changes matches no cave file, so it is not saved.
+	if r, ended := a.shell.FinishedAttempt(); ended && a.replayDir != "" {
+		if r == nil {
+			s.Notify("Playtest not recorded: save the cave first (Cmd+S)")
+			return nil
+		}
 		path, err := replay.Save(a.replayDir, r, time.Now())
 		if err != nil {
 			log.Printf("saving replay: %v", err)
