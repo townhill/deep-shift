@@ -28,7 +28,7 @@ const (
 type Input struct {
 	MouseX, MouseY        int
 	Paint, Erase          bool    // left and right mouse buttons, held
-	Shift, Alt, Cmd       bool    // held: Shift-drag fills a box, Alt-click picks, Cmd-click flood-fills
+	Shift, Alt, Cmd       bool    // held: Shift-drag fills a box, Alt-drag selects (Alt-click picks), Cmd-click flood-fills
 	WheelX, WheelY        float64 // scrolled this update, in wheel steps
 	Up, Down, Left, Right bool    // arrow keys or WASD held (without Cmd)
 
@@ -40,10 +40,13 @@ type Input struct {
 	Grid         bool    // G
 	Toggle       bool    // O: open or close the mechanism under the mouse
 	Reach        bool    // R: the reachability overlay
+	Copy, Cut    bool    // Cmd+C, Cmd+X: copy or cut the selection
+	Paste        bool    // Cmd+V: start pasting the copy
+	SelectAll    bool    // Cmd+A
 	Settings     bool    // Tab: the cave settings panel
 	Back         bool    // Esc
 	Enter        bool    // confirms a settings field
-	Backspace    bool    // deletes in a settings field
+	Backspace    bool    // deletes in a settings field, or clears the selection
 	Grow, Shrink sim.Dir // Cmd+arrow, Cmd+Shift+arrow: add or remove a column or row on that side
 	Chars        []rune  // text typed this update, for settings fields
 }
@@ -58,6 +61,7 @@ func (in Input) busy() bool {
 func (in Input) pressed(prev Input) bool {
 	return in.Paint && !prev.Paint || in.Erase && !prev.Erase || in.Brush != 0 || in.Undo || in.Redo ||
 		in.Save || in.Playtest || in.Grid || in.Toggle || in.Reach || in.Settings || in.Back || in.Enter || in.Backspace ||
+		in.Copy || in.Cut || in.Paste || in.SelectAll ||
 		in.Grow != sim.DirNone || in.Shrink != sim.DirNone || len(in.Chars) > 0
 }
 
@@ -98,6 +102,11 @@ type Editor struct {
 	reachOn     bool    // show the reachability overlay
 	linking     sim.Pos // the selected valve: gates painted now join its mechanism
 	linkingOK   bool
+	selection   Box // the selected cells, when selected
+	selected    bool
+	clip        Clip // the last copy, kept across caves by the shell
+	clipOK      bool
+	pasting     bool // clicks stamp the copy
 	settings    settings
 	confirm     confirm
 	notice      string
@@ -117,6 +126,7 @@ type stroke struct {
 	before   doc     // the cave before the stroke, for undo and cancel
 	changed  bool
 	unlinked bool // a gate was painted with no valve to join
+	selects  bool // an Alt-drag selecting cells, not painting
 }
 
 // confirm is a question awaiting a second press of the same key.
@@ -233,9 +243,33 @@ func (e *Editor) updateEditing(in, prev Input) Request {
 	if in.pressed(prev) && (e.confirm == confirmLeave && !in.Back || e.confirm == confirmReplace && !in.Save) {
 		e.confirm, e.noticeLeft = confirmNone, 0
 	}
+	if e.pasting {
+		switch {
+		case in.Back, in.Erase && !prev.Erase:
+			e.pasting = false
+			return RequestNone
+		case in.Paint && !prev.Paint:
+			if e.hoverOK { // where the preview shows
+				e.stamp(cell)
+			}
+			return RequestNone
+		case in.Brush != 0, in.Settings, in.Playtest, in.Copy, in.Cut, in.SelectAll:
+			e.pasting = false
+		}
+	}
 	switch {
+	case in.Back && e.selected:
+		e.selected = false
 	case in.Back:
 		return e.back()
+	case in.Copy, in.Cut:
+		e.copySelection(in.Cut)
+	case in.Paste:
+		e.startPaste()
+	case in.SelectAll:
+		e.selection, e.selected = Box{0, 0, e.doc.width() - 1, e.doc.height() - 1}, true
+	case in.Backspace && e.selected:
+		e.clearSelection()
 	case in.Save:
 		e.save()
 	case in.Playtest:
@@ -337,7 +371,7 @@ func (e *Editor) press(in Input, inView bool, cell sim.Pos, erase bool) {
 		return
 	}
 	if in.Alt && !erase {
-		e.pick(cell)
+		e.stroke = &stroke{selects: true, anchor: e.clamp(cell), last: cell}
 		return
 	}
 	s := &stroke{erase: erase, symbol: e.symbol(), box: in.Shift, anchor: e.clamp(cell), last: cell, before: e.doc.clone()}
@@ -373,6 +407,18 @@ func (e *Editor) fill(s *stroke, p sim.Pos) {
 func (e *Editor) continueStroke(in Input, inView bool, cell sim.Pos) {
 	s := e.stroke
 	switch {
+	case s.selects && in.Back:
+		e.stroke = nil
+		return
+	case s.selects && !in.Paint:
+		// A click picks the cell's brush; a drag selects the cells.
+		e.stroke = nil
+		if end := e.clamp(s.last); end == s.anchor {
+			e.pick(s.anchor)
+		} else {
+			e.selection, e.selected = boxOf(s.anchor, end), true
+		}
+		return
 	case in.Back: // cancel: put the cave back as it was
 		e.doc, e.stroke, e.stale = s.before, nil, true
 		return
@@ -386,7 +432,7 @@ func (e *Editor) continueStroke(in Input, inView bool, cell sim.Pos) {
 	case !inView:
 		return
 	}
-	if !s.box {
+	if !s.box && !s.selects {
 		e.paintLine(s, s.last, cell)
 	}
 	s.last = cell
@@ -563,6 +609,59 @@ func (e *Editor) pick(p sim.Pos) {
 // symbol is the current brush's symbol.
 func (e *Editor) symbol() rune { return Palette[e.brush].Variants[e.variant[e.brush]] }
 
+// copySelection copies the selected cells, and with cut clears them to
+// floor.
+func (e *Editor) copySelection(cut bool) {
+	if !e.selected {
+		e.setNotice("Select cells to copy first: Option-drag over them, or Cmd+A for the whole cave")
+		return
+	}
+	e.clip, e.clipOK = e.doc.copyBox(e.selection), true
+	size := fmt.Sprintf("%d x %d", e.clip.W, e.clip.H)
+	if !cut {
+		e.setNotice("Copied " + size + ": Cmd+V to paste")
+		return
+	}
+	before := e.doc.clone()
+	if e.doc.clear(e.selection) {
+		e.commit(before)
+	}
+	e.setNotice("Cut " + size + ": Cmd+V to paste")
+}
+
+// clearSelection clears the selected cells to floor.
+func (e *Editor) clearSelection() {
+	before := e.doc.clone()
+	if e.doc.clear(e.selection) {
+		e.commit(before)
+	}
+}
+
+// startPaste makes clicks stamp the copy, until Esc or a right-click.
+func (e *Editor) startPaste() {
+	if !e.clipOK {
+		e.setNotice("Nothing copied yet: Option-drag to select, then Cmd+C")
+		return
+	}
+	e.pasting = true
+	e.setNotice(fmt.Sprintf("Pasting %d x %d: click to place it, Esc or right-click to stop", e.clip.W, e.clip.H))
+}
+
+// stamp pastes the copy with its top-left corner at p, as one undo step.
+func (e *Editor) stamp(p sim.Pos) {
+	before := e.doc.clone()
+	if e.doc.stamp(e.clip, p, e.selectedValve()) {
+		e.commit(before)
+	}
+}
+
+// Clip returns the last copy, if any, so the shell can carry it to the next
+// cave opened.
+func (e *Editor) Clip() (Clip, bool) { return e.clip, e.clipOK }
+
+// SetClip gives the editor a copy made in another cave, ready to paste.
+func (e *Editor) SetClip(c Clip) { e.clip, e.clipOK = c, true }
+
 // toggle opens or closes the mechanism of the valve or gate under the mouse,
 // setting how the cave starts.
 func (e *Editor) toggle() {
@@ -696,6 +795,18 @@ func (e *Editor) refresh() {
 		}
 	}
 	e.reach = reachable(e.cells, e.unknown, w)
+	e.fitSelection()
+}
+
+// fitSelection keeps the selection inside the cave after it shrinks, or
+// drops it if nothing of it is left.
+func (e *Editor) fitSelection() {
+	b := &e.selection
+	w, h := e.doc.width(), e.doc.height()
+	if b.X0 >= w || b.Y0 >= h {
+		e.selected = false
+	}
+	b.X1, b.Y1 = min(b.X1, w-1), min(b.Y1, h-1)
 }
 
 func (e *Editor) sourceName() string {
