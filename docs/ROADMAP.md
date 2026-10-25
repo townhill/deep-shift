@@ -210,6 +210,34 @@ Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave cr
   enough to wade to the exit
 - [ ] Feel: is the crawler speed (one cell per 0.3 s) right? Can you read where a crawler will go next?
 
+## Arcade music (owner request; delivered in the cloud, Mac playtest pending)
+
+The owner asked for arcade music that can be turned off and on, and chose the key, the default and the
+pause behaviour ([D-055](DECISIONS.md#d-055-arcade-music-owner-decision)). No rule changed: rule version 4.
+
+- [x] An original 32 s loop synthesised in code: pulse lead, arpeggio, triangle bass and noise drums. Tests
+  pin its length, its silent seam and its peak below the cues (Cloud)
+- [x] B turns the music off and on; M mutes it with everything else; a paused cave holds it; `-no-music`
+  starts with it off. The rules and their notices are tested headlessly (Cloud)
+- [x] In a headless capture, the app's music stream matched the loop sample for sample and wrapped at 32 s;
+  B, M and Esc stopped it and resumed it where it stopped (Linux/OpenGL only; D-014 addendum)
+- [x] The HUD hint and both menu footers name M and B, and fit their lines (Cloud)
+- [ ] **Mac:** listen to it (checklist below)
+
+### Mac playtest checklist for the music
+
+Run `go run ./cmd/deepshift` with no flags.
+
+- [ ] Music starts on the title screen and keeps going into the cave list and a cave
+- [ ] It loops with no click, gap or jump every 32 s
+- [ ] Every cue (digging, crystals, landings, the valve, completion) is still easy to hear over it, and it
+  never crackles or clips, even when several cues sound together
+- [ ] B turns it off ("Music off (B: on)") and back on ("Music on") in a cave, the title and the cave list
+- [ ] M silences everything; M again brings the music back, unless B turned it off
+- [ ] Esc pauses the music with the cave; Esc again resumes it where it stopped
+- [ ] `-no-music` starts silent until B is pressed
+- [ ] Feel: is it pleasant over a long cave, or wearing? Is the tempo right? Too loud or too quiet?
+
 ## Phase 5 (continued) — glimmers, the shattering creature (delivered in the cloud; Mac playtest pending)
 
 The owner asked for the 1984 game's "rock on a butterfly makes diamonds" and chose the recommended design
@@ -270,8 +298,8 @@ Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave gl
 | F-13 | Tune water: capacity, cadence, how far it spreads | Provisional values (D-027); needs the cave 04 Mac playtest |
 | F-14 | A splash cue when an object enters water | Valve and gate cues are done (D-038); a splash needs a new event, so a rule version |
 | F-15 | Slow the player in shallow water? | SPEC §6.3 allows it later; it must be a rule (same in replays), not a renderer effect |
-| F-16 | Save campaign progress and settings locally | Progress is per run only (D-037); SPEC §11 Phase 5 "local preferences" |
-| F-17 | Volume control beyond mute | SPEC §4 accessibility; M only toggles (D-038) |
+| F-16 | Save campaign progress and settings locally | Progress, sound and music settings are per run only (D-037, D-055); SPEC §11 Phase 5 "local preferences" |
+| F-17 | Volume control beyond mute, with separate music and effects levels | SPEC §4 accessibility; M and B only toggle (D-038, D-055) |
 | F-18 | Reduce-motion option for the water easing and glides | SPEC §4 accessibility, with F-8 |
 | F-19 | Tune `CrawlerIntervalTicks` | Provisional (D-041); needs the Crawler Warren Mac playtest |
 | F-20 | Creatures in campaign caves, and more kinds (a fixed patrol) | The right-hand kind, the glimmer, is done (D-045); the example caves are the only ones with creatures, and SPEC §8's regions call for them |
@@ -280,3 +308,4 @@ Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave gl
 | F-23 | Tune the shattering: how many crystals, and whether the falling object stops on them | Provisional (D-045); needs the Glimmer Hollow Mac playtest |
 | F-24 | Destructive explosions | SPEC §7 "Later". A faithful 3×3 blast that destroys terrain and harms the player was left out of D-045 because it needs damage rules first |
 | F-25 | A visual cue for crystals forming (a brief sparkle), with the reduced-effects option | Crystals simply appear when a glimmer shatters (D-048); the shatter cue carries the moment for now |
+| F-29 | More music: a longer loop, or a tune per region or for the title | One 32 s loop (D-055) may wear in long caves; judge in the Mac playtest |

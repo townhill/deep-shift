@@ -490,7 +490,7 @@ type HUD struct {
 }
 
 // ControlsHint is shown when no prompt is active.
-const ControlsHint = "Arrows/WASD: move   Space: valve   Esc: pause   F: fullscreen   M: sound"
+const ControlsHint = "Arrows/WASD: move  Space: valve  Esc: pause  F: fullscreen  M: sound  B: music"
 
 // HUD returns the current HUD text.
 func (s *Session) HUD() HUD {

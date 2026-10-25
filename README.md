@@ -29,8 +29,8 @@ caves, art, names and rules are original to this project.
 > 4. "Reservoir" (water and a sluice gate);
 > 5. "The Sluice" (water and gravity, two ways through).
 >
-> There's a title menu and a cave list, pause/restart, a HUD, sound effects, a performance overlay, and
-> automatic replays of finished attempts. Progress is not saved between runs. See [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
+> There's a title menu and a cave list, pause/restart, a HUD, sound effects, arcade music, a performance
+> overlay, and automatic replays of finished attempts. Progress is not saved between runs. See [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
 
 ## What has and has not been verified
 
@@ -45,11 +45,12 @@ caves, art, names and rules are original to this project.
 | Every cave can be completed; cave 05 has two distinct routes; cave 01 cannot hurt the player | Golden replays plus tests on each route's events and water state | Verified (Linux); CI runs them on macOS arm64 |
 | Menus: title, cave list, keys that chose an entry never leak into the game | `internal/game` shell tests; headless capture | Verified (Linux) |
 | Sound: thirteen original synthesised cues, one per kind of event per tick | `internal/sfx` tests; in a headless capture the app's audio streams matched the synthesised cues sample for sample (before the shatter cue was added) | Verified as data (Linux VM guest); **the shatter cue is checked by tests only; none yet heard on a Mac** |
+| Music: an original 32 s arcade loop; B turns it off and on, M mutes it with everything else, a paused cave holds it | `internal/sfx` tests (loop length, silent seam, peak below the cues), `internal/game` tests of the keys; in a headless capture the app's music stream matched the loop sample for sample, wrapped at 32 s, and B, M and Esc paused and resumed it | Verified as data (Linux VM guest); **not yet heard on a Mac** |
 | A finished attempt is saved as a replay that reproduces it exactly | Session tests; app run headlessly (below) | Verified (Linux) |
 | Cave files validate; broken caves give useful errors | `internal/level` tests, `cavetool validate` | Verified |
 | macOS arm64 / amd64 executables compile | Cross-compile from Linux; native build on CI's macOS runner | Compile-only |
 | `DeepShift.app` bundle builds and is ad-hoc signed | `scripts/build-macos-app.sh` on CI's macOS runner | Packaging checked in CI; **launch from Finder not yet verified** |
-| Window, keyboard, rendering, HUD on a real Mac | Owner ran `go run ./cmd/deepshift` on a Mac: "ok as a first pass" (Phase 1 build) | First pass only; **menus, sound, caves 01–05, boulders, water, crawlers and glimmers not yet played on a Mac** |
+| Window, keyboard, rendering, HUD on a real Mac | Owner ran `go run ./cmd/deepshift` on a Mac: "ok as a first pass" (Phase 1 build) | First pass only; **menus, sound, music, caves 01–05, boulders, water, crawlers and glimmers not yet played on a Mac** |
 | 60 FPS on a reference Apple Silicon Mac | The in-game performance overlay (`` ` `` or F3) measures it | **Not yet measured** |
 | Rendering + key handling of the real app on Linux (Xvfb, Mesa software GL) | Ebitengine `exp/vmhost` headless capture, run once by hand; Glimmer Hollow frames captured from the real session and renderer by a scratch program | Observed in the cloud sessions; not macOS, not in CI ([D-014](docs/DECISIONS.md#d-014-ebitengine-expvmhost-headless-capture-assessed-not-adopted)) |
 
@@ -108,7 +109,8 @@ release milestone.
 | R | Restart the cave, from the pause, completion or death screen. |
 | N | Next cave, from the pause, completion or death screen (wraps after the last). |
 | C | The cave list, from the pause, completion or death screen. |
-| M | Sound on/off |
+| M | Sound on/off, music included |
+| B | Music on/off |
 | F | Toggle fullscreen |
 | `` ` `` or F3 | Performance overlay on/off (frame rate, update and draw times) |
 | Cmd+Q / close window | Quit |
@@ -122,6 +124,7 @@ cave directly, run `go run ./cmd/deepshift -cave cave_03`. To play your own cave
 Other options:
 
 - `-no-audio` starts without opening an audio device, for a machine without sound output;
+- `-no-music` starts with the music off (B turns it on);
 - `-perf` starts with the performance overlay on.
 
 Cave 01 is deliberately safe: nothing in it can fall on you. Every other cave can be lost, and R always
@@ -205,10 +208,10 @@ internal/level/       versioned cave file format, validation with located errors
 internal/replay/      tick-stamped replay format, runner, golden comparison
 internal/game/        pure-Go session and menus: tick scheduling, keyboard intent, pause/restart, camera, HUD text
 internal/sprites/     original placeholder tiles drawn in code (pure Go, unit-tested)
-internal/sfx/         original sound cues synthesised in code, and which events trigger them (pure Go, tested)
+internal/sfx/         original sound cues and music synthesised in code, and which events trigger the cues (pure Go, tested)
 internal/perf/        rolling timing statistics for the performance overlay (pure Go, tested)
 internal/render/      Ebitengine drawing of game frames, menus and HUD
-internal/audio/       Ebitengine playback of the sound cues
+internal/audio/       Ebitengine playback of the sound cues and the looping music
 assets/levels/        authored caves (embedded into the binary)
 testdata/replays/     golden replay fixtures with expected hashes and explanations
 packaging/macos/      Info.plist template

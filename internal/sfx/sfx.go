@@ -1,11 +1,12 @@
-// Package sfx synthesises Deep Shift's original sound cues in code and maps
-// simulation events to them.
+// Package sfx synthesises Deep Shift's original sound cues and music in code
+// and maps simulation events to the cues.
 //
-// Every cue is generated from oscillators, deterministic noise and
+// Every sound is generated from oscillators, deterministic noise and
 // envelopes, so there are no audio files to license and the sounds are
 // reproducible. The package is pure Go (no audio device): internal/audio
 // plays the PCM it produces. Sound is informative but never required
-// (SPEC §2): every cue repeats something the screen already shows.
+// (SPEC §2): every cue repeats something the screen already shows, and the
+// music (music.go) is atmosphere only.
 package sfx
 
 import (
