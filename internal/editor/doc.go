@@ -260,3 +260,111 @@ func (d *doc) shift(dx, dy int) {
 		}
 	}
 }
+
+// placeValve paints a shut valve at p with a mechanism of its own. It has no
+// gates yet, which validation reports until one is linked. An existing valve
+// is kept, but given a mechanism if it had none. It reports whether anything
+// changed.
+func (d *doc) placeValve(p sim.Pos) bool {
+	if !d.inBounds(p) {
+		return false
+	}
+	if c, _ := sim.CellForSymbol(d.at(p)); c.Terrain.Valve() {
+		if d.mechanismOf(p) >= 0 {
+			return false
+		}
+		d.mechanisms = append(d.mechanisms, sim.Mechanism{Valve: p})
+		return true
+	}
+	d.put(p, sim.SymbolValveShut)
+	d.mechanisms = append(d.mechanisms, sim.Mechanism{Valve: p})
+	d.formatVersion = max(d.formatVersion, level.SymbolVersion(sim.SymbolValveShut))
+	return true
+}
+
+// placeGate paints a gate at p linked into valve v's mechanism, open or
+// closed to match the valve. A gate linked elsewhere moves to v. With no
+// mechanism for v (no valve selected, or it was removed) a new gate is left
+// unlinked, which validation reports, and an existing gate is kept as it is.
+// It reports whether anything changed.
+func (d *doc) placeGate(p, v sim.Pos) bool {
+	if !d.inBounds(p) {
+		return false
+	}
+	m := d.mechanismOf(v)
+	want := sim.SymbolGateClosed
+	if m >= 0 && d.at(v) == sim.SymbolValveOpen {
+		want = sim.SymbolGateOpen
+	}
+	cell, _ := sim.CellForSymbol(d.at(p))
+	switch {
+	case m < 0 && cell.Terrain.Gate():
+		return false
+	case m >= 0 && d.at(p) == want && slices.Contains(d.mechanisms[m].Gates, p):
+		return false
+	}
+	d.put(p, want) // unlinks p from wherever it was
+	if m = d.mechanismOf(v); m >= 0 {
+		d.mechanisms[m].Gates = append(d.mechanisms[m].Gates, p)
+	}
+	d.formatVersion = max(d.formatVersion, level.SymbolVersion(want))
+	return true
+}
+
+// mechanismOf returns the index of the mechanism whose valve is at v, or -1.
+func (d *doc) mechanismOf(v sim.Pos) int {
+	return slices.IndexFunc(d.mechanisms, func(m sim.Mechanism) bool { return m.Valve == v })
+}
+
+// owner returns the index of the mechanism p is the valve or a gate of, or
+// -1.
+func (d *doc) owner(p sim.Pos) int {
+	return slices.IndexFunc(d.mechanisms, func(m sim.Mechanism) bool { return m.Valve == p || slices.Contains(m.Gates, p) })
+}
+
+// toggle opens or closes the mechanism that p's valve or gate belongs to.
+// The valve and all its gates change together, so they stay consistent: it
+// sets how the cave starts, as a valve turned before the first tick would.
+// It reports whether anything changed.
+func (d *doc) toggle(p sim.Pos) bool {
+	m := d.owner(p)
+	if m < 0 {
+		return false
+	}
+	mech := d.mechanisms[m]
+	open := d.at(mech.Valve) == sim.SymbolValveShut
+	flip := func(q sim.Pos, shut, opened rune) {
+		if d.inBounds(q) && (d.at(q) == shut || d.at(q) == opened) {
+			d.grid[q.Y][q.X] = shut
+			if open {
+				d.grid[q.Y][q.X] = opened
+			}
+		}
+	}
+	flip(mech.Valve, sim.SymbolValveShut, sim.SymbolValveOpen)
+	for _, g := range mech.Gates {
+		flip(g, sim.SymbolGateClosed, sim.SymbolGateOpen)
+	}
+	return true
+}
+
+// region returns the cells 4-connected to p that hold the same symbol as p,
+// p included, for flood fill.
+func (d *doc) region(p sim.Pos) []sim.Pos {
+	if !d.inBounds(p) {
+		return nil
+	}
+	want := d.at(p)
+	seen := map[sim.Pos]bool{p: true}
+	out := []sim.Pos{p}
+	for i := 0; i < len(out); i++ {
+		for _, dir := range [...]sim.Dir{sim.DirUp, sim.DirDown, sim.DirLeft, sim.DirRight} {
+			q := out[i].Add(dir)
+			if d.inBounds(q) && !seen[q] && d.at(q) == want {
+				seen[q] = true
+				out = append(out, q)
+			}
+		}
+	}
+	return out
+}

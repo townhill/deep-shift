@@ -7,26 +7,37 @@ import (
 )
 
 // Brush is one palette entry: a family of symbols. Choosing the brush
-// again (its number key, or a click on it) moves on to the next variant.
+// again (its key, or a click on it) moves on to the next variant.
 type Brush struct {
 	Name     string
+	Key      string // the key that chooses it, as labelled on the palette
 	Variants []rune
 }
 
-// Palette lists the brushes in key order (1 to 9). Valves and gates are not
-// on it yet: they need linking into mechanisms, which the editor cannot do
-// yet. Caves loaded with them keep them.
+// Palette lists the brushes in key order: 1 to 9, then 0 and -. A valve
+// brush paints a shut valve with a mechanism of its own; a gate brush paints
+// a gate linked to the selected valve (D-052).
 var Palette = []Brush{
-	{"Wall", []rune{sim.SymbolWall}},
-	{"Earth", []rune{sim.SymbolEarth}},
-	{"Floor", []rune{sim.SymbolEmpty}},
-	{"Crystal", []rune{sim.SymbolCrystal}},
-	{"Boulder", []rune{sim.SymbolBoulder}},
-	{"Player start", []rune{sim.SymbolPlayer}},
-	{"Exit", []rune{sim.SymbolExit}},
-	{"Water", []rune{sim.SymbolDeepWater, '3', '2', '1'}},
-	{"Crawler", []rune{'↑', '→', '↓', '←'}}, // clockwise
+	{"Wall", "1", []rune{sim.SymbolWall}},
+	{"Earth", "2", []rune{sim.SymbolEarth}},
+	{"Floor", "3", []rune{sim.SymbolEmpty}},
+	{"Crystal", "4", []rune{sim.SymbolCrystal}},
+	{"Boulder", "5", []rune{sim.SymbolBoulder}},
+	{"Player start", "6", []rune{sim.SymbolPlayer}},
+	{"Exit", "7", []rune{sim.SymbolExit}},
+	{"Water", "8", []rune{sim.SymbolDeepWater, '3', '2', '1'}},
+	{"Crawler", "9", []rune{'↑', '→', '↓', '←'}}, // clockwise
+	{"Valve", "0", []rune{sim.SymbolValveShut}},
+	{"Gate", "-", []rune{sim.SymbolGateClosed}},
 }
+
+// gateBrush is the gate brush's index in Palette.
+var gateBrush, _, _ = brushFor(sim.SymbolGateClosed)
+
+// oneOnly reports whether a box or flood fill of symbol r places just one,
+// where the gesture ended: a second player start or exit would only move the
+// first, and a box of valves, each with no gates, is never wanted.
+func oneOnly(r rune) bool { return single(r) || r == sim.SymbolValveShut }
 
 // eraser is what the right mouse button paints: empty floor.
 const eraser = sim.SymbolEmpty
