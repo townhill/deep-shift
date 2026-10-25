@@ -36,6 +36,7 @@ func main() {
 	replayDir := flag.String("replay-dir", defaultReplayDir(), "directory for replays of finished attempts (empty: do not save)")
 	showVersion := flag.Bool("version", false, "print the build version and exit without opening a window")
 	noAudio := flag.Bool("no-audio", false, "do not open an audio device (for machines without sound output)")
+	noMusic := flag.Bool("no-music", false, "start with the music off (toggle with B)")
 	showPerf := flag.Bool("perf", false, "start with the performance overlay on (toggle with ` or F3)")
 	flag.Parse()
 
@@ -64,7 +65,7 @@ func main() {
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetTPS(game.UpdatesPerSecond)
 	a := &app{
-		shell: shell, renderer: render.New(build), replayDir: *replayDir,
+		shell: shell, renderer: render.New(build), settings: game.NewSound(!*noAudio, !*noMusic), replayDir: *replayDir,
 		perfOn: *showPerf, updates: perf.NewWindow(perfWindow), draws: perf.NewWindow(perfWindow),
 	}
 	if !*noAudio {
@@ -124,6 +125,7 @@ type app struct {
 	shell     *game.Shell
 	renderer  *render.Renderer
 	sound     *audio.Player // nil with -no-audio: silent
+	settings  *game.Sound   // M and B
 	replayDir string
 
 	perfOn         bool
@@ -142,22 +144,22 @@ func (a *app) Update() error {
 	if inpututil.IsKeyJustPressed(ebiten.KeyF) {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	}
-	toggleSound := inpututil.IsKeyJustPressed(ebiten.KeyM)
-	if toggleSound {
-		a.sound.SetMuted(!a.sound.Muted())
+	var notice string
+	if inpututil.IsKeyJustPressed(ebiten.KeyM) {
+		notice = a.settings.ToggleMute()
+		a.sound.SetMuted(a.settings.Muted())
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyB) {
+		notice = a.settings.ToggleMusic()
 	}
 	a.shell.Update(readControls())
+	a.sound.SetMusic(a.settings.MusicPlaying(a.shell.Paused()))
 	if a.shell.Screen() != game.ScreenPlaying {
 		return nil
 	}
 	s := a.shell.Playlist().Session()
-	switch {
-	case toggleSound && a.sound == nil:
-		s.Notify("No sound: started with -no-audio")
-	case toggleSound && a.sound.Muted():
-		s.Notify("Sound off (M: on)")
-	case toggleSound:
-		s.Notify("Sound on")
+	if notice != "" {
+		s.Notify(notice)
 	}
 	for _, cue := range s.TakeCues() {
 		a.sound.Play(cue)
