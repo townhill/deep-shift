@@ -190,7 +190,8 @@ decisions are D-040 to D-044.
   ([D-044](DECISIONS.md#d-044-presenting-crawlers)); frames and audio checked in a headless capture
   (Linux/OpenGL only)
 - [x] Level selection UI: done in Phase 4 ([D-037](DECISIONS.md#d-037-menus))
-- [ ] Basic cave editor, structural supports, local preferences, one original visual theme: not started
+- [x] Basic cave editor, milestone 1: see the next section
+- [ ] Structural supports, local preferences, one original visual theme: not started
 - [ ] **Mac:** play Crawler Warren (checklist below)
 
 ### Mac playtest checklist for Crawler Warren
@@ -209,6 +210,63 @@ Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave cr
 - [ ] Turning the valve drowns the corridor crawler, with a pop and a prompt; the water settles shallow
   enough to wade to the exit
 - [ ] Feel: is the crawler speed (one cell per 0.3 s) right? Can you read where a crawler will go next?
+
+## Phase 5 — The cave editor, milestone 1 (delivered in the cloud; Mac playtest pending)
+
+SPEC §8 "Level editor". The owner chose the editor next and asked for playtesting in the first milestone
+([D-045](DECISIONS.md#d-045-the-cave-editor-milestone-1-owner-decision)). The decisions are D-045 to D-049.
+No rule changes: rule version 4, cave format version 4, and every golden replay unchanged.
+
+- [x] Caves are written back in the canonical layout. Every embedded cave reads and writes byte for byte,
+  and CI checks it (`cavetool fmt -check`). Random caves round-trip
+  ([D-046](DECISIONS.md#d-046-canonical-cave-layout-cavetool-fmt-and-drafts)) (Cloud)
+- [x] The editor validates with the game's own loader after every change, and problems point at their
+  cells (Cloud)
+- [x] Paint terrain; place the player start, boulders, crystals, the exit, water and crawlers. The player
+  start and exit move rather than duplicate (Cloud)
+- [x] Strokes with no gaps, boxes, erasing, picking, undo/redo, resizing, and settings for title, id, seed
+  and quota. Random input keeps the editor's invariants, and undoing everything restores the cave exactly;
+  key behaviours are mutation-checked (Cloud)
+- [x] Save and reopen, including caves with problems. A file the editor did not open is never replaced
+  without asking twice. A cave keeps its format version
+  ([D-047](DECISIONS.md#d-047-a-cave-keeps-its-format-version)) (Cloud)
+- [x] Playtest with P and return with P. A playtest is a real session: cave 01's golden replay completes a
+  copy of it ([D-049](DECISIONS.md#d-049-playtests)) (Cloud)
+- [x] Title menu entry, edit list (new cave, your caves, copies of the built-in caves) and `-edit`. Drawn
+  in a headless capture (Linux/OpenGL only, [D-014 addendum](DECISIONS.md#d-014-addendum-cave-editor-headless-capture-2026-10-25))
+- [ ] **Mac:** use the editor (checklist below)
+
+### Mac playtest checklist for the cave editor
+
+Choose "Cave editor" on the title menu, or run `go run ./cmd/deepshift -edit new`.
+
+- [ ] The edit list shows New cave, then "Copy a built-in cave" with all seven caves; it scrolls; Esc goes
+  back to the title
+- [ ] New cave opens one screen of earth in a wall; the status bar reads "EDIT New cave 30x16 Quota 0 of 0
+  OK"
+- [ ] The cell under the pointer is outlined, with a faint preview of the brush; the bar names the cell
+- [ ] Left-drag paints with no gaps however fast you move; right-drag (or a two-finger click and drag on a
+  trackpad) erases to floor; Shift-drag fills a box; Option-click picks a cell's brush
+- [ ] Keys 1–9 choose brushes; pressing 8 again makes water shallower, and 9 again turns the crawler;
+  clicking a palette slot does the same
+- [ ] Painting a second player start or exit moves it
+- [ ] Cmd+Z and Cmd+Shift+Z undo and redo whole strokes; G toggles the grid
+- [ ] Arrows, WASD and the trackpad or wheel scroll a large cave (try a copy of the Proving Ground); the
+  scroll direction feels natural
+- [ ] Cmd+arrows grow the cave and Cmd+Shift+arrows shrink it, with nothing clashing with macOS
+- [ ] Tab opens the settings; typing a title, id, seed and quota works; F and M type letters there rather
+  than toggling fullscreen or sound
+- [ ] Covering the exit shows "1 problem" and the reason; P then refuses, saying what to fix
+- [ ] P playtests; "P: back to the editor" is on the pause, death and completion screens; P returns with
+  every edit intact
+- [ ] Cmd+S saves to `~/Library/Application Support/Deep Shift/caves/new_cave.json`; the list then shows
+  it under "Your caves"; reopening it shows no unsaved changes
+- [ ] A second new cave saved under the same id asks before replacing the first
+- [ ] Esc with unsaved changes asks first; Esc again leaves
+- [ ] `go run ./cmd/deepshift -edit assets/levels/cave_03_the_roll.json`, then Cmd+S without changes: `git
+  status` shows no change
+- [ ] Copy Crawler Warren: the valve's link to its gate is drawn; painting over the valve outlines the gate
+  in red
 
 ## Follow-ups
 
@@ -235,4 +293,8 @@ Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave cr
 | F-19 | Tune `CrawlerIntervalTicks` | Provisional (D-041); needs the Crawler Warren Mac playtest |
 | F-20 | Crawlers in campaign caves, and more kinds (a right-hand crawler, a fixed patrol) | Crawler Warren is the only cave with them; SPEC §8's regions call for creatures |
 | F-21 | An audible cue for a nearby crawler | Walking crawlers are silent (D-044), so a threat out of view cannot be heard; needs care not to become noise |
-| F-22 | Remaining Phase 5 items: cave editor, structural supports, local preferences, a visual theme | SPEC §11 Phase 5; not started (D-040) |
+| F-22 | Remaining Phase 5 items: structural supports, local preferences, a visual theme | SPEC §11 Phase 5; not started (D-040). The editor's first milestone is done (D-045) |
+| F-23 | Editor milestone 2: your caves in the cave list ("My caves"); replays of playtests of saved, unchanged caves | D-045 plan; playtests are not saved yet (D-049) |
+| F-24 | Editor milestone 3: valve and gate brushes with linking; a "reachable from the start" overlay; flood fill; copy and paste | D-045 plan; caves with mechanisms can be edited, but new valves and gates cannot be placed (D-048) |
+| F-25 | Editor: "save as" / rename, metadata editing, and a full, readable problem list | D-048: a cave keeps its first file name, and the bar shows only the first problems |
+| F-26 | Move the headless editor capture into `tools/vmcapture` (F-6) | The editor sessions were scripted by hand (D-014 addendum) |

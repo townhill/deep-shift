@@ -290,10 +290,11 @@ var brushKeys = [...]ebiten.Key{
 	ebiten.KeyDigit6, ebiten.KeyDigit7, ebiten.KeyDigit8, ebiten.KeyDigit9,
 }
 
-// readEditorInput samples the mouse and keyboard for the cave editor. Cmd
-// (Control off macOS) turns Z, S and the arrows into commands; without it
-// the arrows and WASD scroll and letters are shortcuts. The mouse position
-// is in logical screen pixels, the editor layout's coordinates.
+// readEditorInput samples the mouse and keyboard for the cave editor. Cmd or
+// Control (for non-Mac keyboards) turns Z, S and the arrows into commands;
+// without them the arrows and WASD scroll and letters are shortcuts. The
+// mouse position is in logical screen pixels, the editor layout's
+// coordinates.
 func readEditorInput() editor.Input {
 	pressed := inpututil.IsKeyJustPressed
 	held := func(keys ...ebiten.Key) bool {
