@@ -32,6 +32,19 @@ func TestValidateReportsBadFiles(t *testing.T) {
 	}
 }
 
+func TestValidateReportsGlimmers(t *testing.T) {
+	cave := filepath.Join(t.TempDir(), "glimmers.json")
+	doc := `{"format_version": 5, "id": "glimmers", "title": "Glimmers", "width": 6, "height": 3, "seed": 1,
+		"required_crystals": 10, "rows": ["######", "#@*E▶#", "######"]}`
+	if err := os.WriteFile(cave, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := runTool("validate", cave)
+	if code != 0 || !strings.Contains(out, "quota=10/1") || !strings.Contains(out, " glimmers=1 ") {
+		t.Fatalf("exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
+	}
+}
+
 func TestShowPrintsGrid(t *testing.T) {
 	code, out, errOut := runTool("show", "../../assets/levels/test_cave.json")
 	if code != 0 || !strings.Contains(out, "#@   E#") || !strings.Contains(out, "state_hash=") {

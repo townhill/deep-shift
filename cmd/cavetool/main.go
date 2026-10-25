@@ -82,6 +82,9 @@ func describe(w io.Writer, source string, l *level.Level) {
 	if n := l.Crawlers(); n > 0 {
 		fmt.Fprintf(w, " crawlers=%d", n)
 	}
+	if n := l.Glimmers(); n > 0 {
+		fmt.Fprintf(w, " glimmers=%d", n)
+	}
 	fmt.Fprintf(w, " checksum=%s\n", l.Checksum())
 }
 

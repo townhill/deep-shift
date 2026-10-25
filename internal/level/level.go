@@ -4,12 +4,12 @@
 // metadata):
 //
 //	{
-//	  "format_version": 4,          // 1 to 4; see below
+//	  "format_version": 5,          // 1 to 5; see below
 //	  "id": "test_cave",            // ^[a-z0-9][a-z0-9_]*$, at most 64 bytes
 //	  "title": "Proving Ground",    // shown in the HUD, at most 80 characters
 //	  "width": 40, "height": 24,    // 1..256 each
 //	  "seed": 20261017,             // 0..2^53-1, so float64 JSON tools keep it exact
-//	  "required_crystals": 8,       // 0..number of '*' tiles
+//	  "required_crystals": 8,       // 0..number of '*' tiles, plus 9 per glimmer
 //	  "rows": ["####", "#@E#", ...],// height strings of width symbols each
 //	  "mechanisms": [               // version 3; links each valve to its gates
 //	    {"valve": {"x": 4, "y": 2}, "gates": [{"x": 9, "y": 5}]}
@@ -23,7 +23,10 @@
 // with mechanisms: every valve and gate is listed in exactly one, and a
 // mechanism's gates are open exactly when its valve is. Version 4 adds
 // crawlers, written as the arrow of the way each starts facing ('↑' '↓' '←'
-// '→'). Older files are still read unchanged and may not contain newer
+// '→'). Version 5 adds glimmers, written as the triangle pointing the way
+// each starts facing ('▲' '▼' '◀' '▶'); since a shattered glimmer can leave up
+// to sim.ShatterCrystals crystals, the quota may count on that many per
+// glimmer. Older files are still read unchanged and may not contain newer
 // symbols.
 // Each cave must contain exactly one player start '@' and exactly one exit
 // 'E'. Unknown fields are rejected so typos surface instead of being ignored.
@@ -50,7 +53,7 @@ import (
 
 // FormatVersion is the newest cave file version this build reads; new caves
 // should use it.
-const FormatVersion = 4
+const FormatVersion = 5
 
 // MinFormatVersion is the oldest cave file version this build still reads.
 const MinFormatVersion = 1
@@ -62,8 +65,7 @@ const mechanismFormatVersion = 3
 // crawlerFormatVersion is the first version with crawlers.
 const crawlerFormatVersion = 4
 
-// glimmerFormatVersion is the first version with glimmers. It is newer than
-// FormatVersion until cave files can be written with them.
+// glimmerFormatVersion is the first version with glimmers.
 const glimmerFormatVersion = 5
 
 // symbolVersion returns the first format version whose rows may contain r.
@@ -118,6 +120,9 @@ func (l *Level) Crystals() int { return l.cave.CountOccupant(sim.OccupantCrystal
 
 // Crawlers returns the number of crawlers in the layout.
 func (l *Level) Crawlers() int { return l.cave.CountOccupant(sim.OccupantCrawler) }
+
+// Glimmers returns the number of glimmers in the layout.
+func (l *Level) Glimmers() int { return l.cave.CountOccupant(sim.OccupantGlimmer) }
 
 // Checksum fingerprints the gameplay-relevant content: format version,
 // dimensions, seed, quota, rows and mechanisms. Title and metadata are
@@ -396,16 +401,20 @@ func validate(source string, f *file) (*Level, error) {
 		}
 	}
 
-	crystals := validateRows(f.Rows, l, add)
+	crystals, glimmers := validateRows(f.Rows, l, add)
 	validateMechanisms(f.Mechanisms, l, add)
 
+	most := crystals + sim.ShatterCrystals*glimmers
 	switch {
 	case f.RequiredCrystals == nil:
 		add("required_crystals", "missing")
 	case *f.RequiredCrystals < 0:
 		add("required_crystals", "%d is negative", *f.RequiredCrystals)
-	case crystals >= 0 && *f.RequiredCrystals > crystals:
+	case crystals >= 0 && glimmers == 0 && *f.RequiredCrystals > crystals:
 		add("required_crystals", "%d exceeds the %d crystal(s) ('%c') in rows, so the exit could never open", *f.RequiredCrystals, crystals, sim.SymbolCrystal)
+	case crystals >= 0 && *f.RequiredCrystals > most:
+		add("required_crystals", "%d exceeds the %d crystal(s) the cave can yield (%d '%c' in rows, up to %d from each of %d glimmer(s)), so the exit could never open",
+			*f.RequiredCrystals, most, crystals, sim.SymbolCrystal, sim.ShatterCrystals, glimmers)
 	default:
 		l.RequiredCrystals = *f.RequiredCrystals
 	}
@@ -423,23 +432,24 @@ func validate(source string, f *file) (*Level, error) {
 	return l, nil
 }
 
-// validateRows checks the grid and fills l.cave. It returns the crystal
-// count, or -1 if the grid was unusable for counting.
-func validateRows(rows []string, l *Level, add func(field, format string, args ...any)) int {
+// validateRows checks the grid and fills l.cave. It returns the crystal and
+// glimmer counts, or a crystal count of -1 if the grid was unusable for
+// counting.
+func validateRows(rows []string, l *Level, add func(field, format string, args ...any)) (crystals, glimmers int) {
 	if rows == nil {
 		add("rows", "missing")
-		return -1
+		return -1, 0
 	}
 	if l.Height > 0 && len(rows) != l.Height {
 		add("rows", "has %d rows but height is %d", len(rows), l.Height)
 	}
 	if l.Width == 0 || l.Height == 0 || len(rows) != l.Height {
-		return -1
+		return -1, 0
 	}
 
 	cells := make([]sim.Cell, 0, l.Width*l.Height)
 	var players, exits []sim.Pos
-	crystals, gridOK := 0, true
+	gridOK := true
 	for y, row := range rows {
 		field := fmt.Sprintf("rows[%d]", y)
 		if n := utf8.RuneCountInString(row); n != l.Width {
@@ -468,6 +478,9 @@ func validateRows(rows []string, l *Level, add func(field, format string, args .
 				exits = append(exits, sim.Pos{X: x, Y: y})
 			case sim.SymbolCrystal:
 				crystals++
+			}
+			if ok && cell.Occupant == sim.OccupantGlimmer {
+				glimmers++
 			}
 			cells = append(cells, cell)
 			x++
@@ -498,7 +511,7 @@ func validateRows(rows []string, l *Level, add func(field, format string, args .
 	if gridOK {
 		l.cave = sim.Cave{Width: l.Width, Height: l.Height, Cells: cells}
 	}
-	return crystals
+	return crystals, glimmers
 }
 
 // validateMechanisms decodes the mechanisms field and checks it against the
