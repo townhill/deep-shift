@@ -43,6 +43,10 @@ func TestValidateReportsGlimmers(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "quota=10/1") || !strings.Contains(out, " glimmers=1 ") {
 		t.Fatalf("exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
+	code, out, errOut = runTool("validate")
+	if code != 0 || !strings.Contains(out, "id=glimmer_hollow") || !strings.Contains(out, "water=9 mechanisms=2 glimmers=3") {
+		t.Fatalf("exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
+	}
 }
 
 func TestShowPrintsGrid(t *testing.T) {

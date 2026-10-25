@@ -1,0 +1,58 @@
+{
+  "format_version": 5,
+  "id": "glimmer_hollow",
+  "title": "Glimmer Hollow",
+  "width": 30,
+  "height": 16,
+  "seed": 20261025,
+  "required_crystals": 7,
+  "rows": [
+    "##############################",
+    "#...*.........@.....*........#",
+    "#######.################.#####",
+    "#######     ####### ▶       ##",
+    "######V #O# ####### ####### ##",
+    "#######  G  ######* ####### *#",
+    "#########▼#.####### ####### ##",
+    "######## # .#######         ##",
+    "######## # .###########*######",
+    "########       V1#############",
+    "##############.#~#############",
+    "##############.#~#############",
+    "##############.#G#############",
+    "##############   ▶ E##########",
+    "##############################",
+    "##############################"
+  ],
+  "mechanisms": [
+    {
+      "valve": {
+        "x": 6,
+        "y": 4
+      },
+      "gates": [
+        {
+          "x": 9,
+          "y": 5
+        }
+      ]
+    },
+    {
+      "valve": {
+        "x": 15,
+        "y": 9
+      },
+      "gates": [
+        {
+          "x": 16,
+          "y": 12
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "author": "Deep Shift project (original layout)",
+    "difficulty": "tutorial",
+    "purpose": "Glimmers keep the wall on their right. Watch the first circle its pillar and wait in the pockets on its left while it passes; open the vault so its boulder drops onto the second, which shatters into crystals; open the sluice so the water drowns the third, which leaves nothing, then wade through to the exit."
+  }
+}

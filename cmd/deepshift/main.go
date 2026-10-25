@@ -32,7 +32,7 @@ import (
 )
 
 func main() {
-	cave := flag.String("cave", "", "start at this embedded cave id (cave_01 to cave_05, crawler_warren or test_cave) or play this cave JSON file")
+	cave := flag.String("cave", "", "start at this embedded cave id (cave_01 to cave_05, crawler_warren, glimmer_hollow or test_cave) or play this cave JSON file")
 	replayDir := flag.String("replay-dir", defaultReplayDir(), "directory for replays of finished attempts (empty: do not save)")
 	showVersion := flag.Bool("version", false, "print the build version and exit without opening a window")
 	noAudio := flag.Bool("no-audio", false, "do not open an audio device (for machines without sound output)")
