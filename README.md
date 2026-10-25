@@ -171,11 +171,14 @@ cave id (edited as a copy) or a cave file (saved back to it).
 
 | Input | Action |
 |---|---|
-| 1–9 | Choose a brush: wall, earth, floor, crystal, boulder, player start, exit, water, crawler. Press again for the next variant (shallower water, the crawler turned clockwise). Clicking a palette slot does the same. |
-| Left drag | Paint. The player start and the exit move rather than duplicate. |
+| 1–9, 0, - | Choose a brush: wall, earth, floor, crystal, boulder, player start, exit, water, crawler, valve, gate. Press again for the next variant (shallower water, the crawler turned clockwise). Clicking a palette slot does the same. |
+| Left drag | Paint. The player start and the exit move rather than duplicate. A valve becomes the selected valve; gates join the selected valve. |
 | Right drag | Erase to floor |
 | Shift + drag | Fill a box |
-| Option (Alt) + click | Pick the brush of a cell |
+| Cmd + click | Flood-fill the area of matching cells (Cmd + right-click fills it with floor) |
+| Option (Alt) + click | Pick the brush of a cell; on a valve or gate, select its valve and the gate brush |
+| O | Open or close the valve or gate under the pointer, with all its linked gates: how the cave starts |
+| R | Reach overlay on/off: shades what the player cannot reach by walking and digging alone |
 | Arrows / WASD / wheel | Scroll |
 | Cmd+Z / Cmd+Shift+Z | Undo / redo |
 | Cmd+arrow / Cmd+Shift+arrow | Add / remove a column or row on that side |
@@ -190,8 +193,14 @@ the bottom bar, and the cells they concern are outlined in red. A cave with prob
 but it cannot be playtested until they are fixed. New caves are saved as
 `~/Library/Application Support/Deep Shift/caves/<id>.json`; `-caves-dir <dir>` changes the folder. They
 appear in **Choose a cave** under "My caves", after the built-in caves; one that cannot be played yet is
-listed as "(cannot play)" and says why. Valves and gates cannot be placed yet (caves that have them keep
-them).
+listed as "(cannot play)" and says why.
+
+**Sluices:** paint a valve (0), then its gates (-): each gate joins the selected valve, ringed in yellow,
+and a line links them. To add gates to another valve, Option-click it first. A valve with no gates, or a
+gate with no valve, is a problem until it is linked. O sets whether a sluice starts open.
+
+**Reach (R)** is a first look at a layout, not a solver: it follows walking and digging only. Falling and
+pushed boulders, turned valves and flowing water can make a cave easier or harder than it shows.
 
 A playtest of a saved, unchanged cave is saved as a replay like any finished attempt; a playtest of a cave
 with unsaved changes is not. Replays of your own caves name the cave file. Re-run one with

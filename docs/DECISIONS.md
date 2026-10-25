@@ -810,7 +810,7 @@ and water are stable, with tests for movement order, collision and reset.
 - **Cmd or Control.** Cmd shortcuts accept Command or Control, for keyboards without a Command key. On a
   Mac, Ctrl+arrows would switch Spaces, so Cmd is the one to use there.
 - **Not yet built:**
-  - valve and gate brushes;
+  - valve and gate brushes (done in milestone 3: D-052);
   - editing metadata;
   - "save as" (a cave keeps the file name of its first save, even if its id changes);
   - a full problem list (the bar shows the first one or two, and outlines every cell concerned).
@@ -915,4 +915,69 @@ and water are stable, with tests for movement order, collision and reset.
     replay -cave` matched the file;
   - after an edit, the next playtest showed "Playtest not recorded: save the cave first (Cmd+S)", and no
     second file was written.
+- This is Linux/OpenGL evidence only, not a Mac test.
+
+## D-052: Valves, gates and their links (editor milestone 3)
+
+- **Two brushes:** Valve (0) and Gate (-). Every valve and gate must belong to exactly one mechanism, and a
+  gate must be open exactly when its valve is (D-029, D-031). The editor maintains that as it goes, so
+  linking needs no separate mode.
+  - **A painted valve** is shut and gets a mechanism of its own. It becomes the **selected valve**, ringed
+    in yellow, with its links drawn bold. Until it has a gate, validation reports it, outlined.
+  - **A painted gate** joins the selected valve's mechanism, open or closed to match it. A gate already
+    linked to another valve moves to the selected one.
+  - **With no valve selected,** a new gate is left unlinked: it is reported and outlined, and the bar says
+    to paint or select a valve. Repainting an existing gate with no valve selected leaves it as it was.
+  - **Alt-click on a valve or gate** selects its valve and the gate brush, so gates can be added to an
+    existing mechanism, such as cave 04's.
+  - **O on a valve or gate** opens or closes the whole mechanism at once. That is how the cave starts,
+    as if the valve were turned before the first tick; no current cave starts open.
+- **Removing.** Painting over a valve or gate unlinks it, as in milestone 1. A removed valve takes its
+  mechanism with it, and the selection goes too.
+- **Boxes and fills of valves place one,** at the end of the gesture, like the player start and exit. A box
+  of valves, each with no gates, is never wanted.
+- **Format version.** Valves and gates need format version 3, so painting one raises an older cave's
+  version, with the usual warning (D-047).
+- **Evidence:**
+  - the random-input invariants now check every mechanism after every step: valves are valves, gates are
+    gates, each linked once, and gates match their valve;
+  - a test builds a sluice in the editor and turns its valve in the simulation;
+  - a shell test playtests one and opens its gate with Space.
+
+## D-053: The reach overlay
+
+- **R shades the cells the player cannot reach** from the start by walking and digging alone, with nothing
+  else moving. The bar gives a summary: reachable crystals against the quota, and whether the exit is
+  reached.
+- **The rules it follows:**
+  - **entered:** floor, open gates, shallow water, earth, crystals and crawlers (a crawler moves on);
+  - **blocked:** walls, closed gates, valves, deep water, boulders and unknown symbols;
+  - **the exit** is reached, but not passed, since entering it ends the cave.
+- **It is a first look, not a solver.** Boulders fall and can be pushed, valves turned and water drained,
+  so a cave can be solvable when the overlay says not, and the reverse. Cave 04, for example, shows 3 of 9
+  crystals and no exit until its sluice is used. A solver over the real rules is a separate, larger
+  piece of work, like the planners used to design the campaign.
+- **Shading.** Walls are not shaded: they are never reachable, and shading them hid the floor and earth
+  that matter (seen in the headless capture).
+
+## D-054: Flood fill, and copy and paste left for later
+
+- **Cmd-click flood-fills** the 4-connected area of cells matching the clicked cell with the brush, as one
+  undo step. Cmd-right-click fills it with floor. Filling with a player start, exit or valve places one,
+  like a box.
+- **Cmd or Control.** Cmd-click accepts Control-click too, like the other Cmd shortcuts (D-048).
+- **Copy and paste is not in this milestone.** It needs a selection separate from the Shift-drag box, and
+  copied valves and gates must keep their links, joined to a copied valve or to the selected one. That
+  deserves its own change: follow-up F-27.
+
+## D-014 addendum: editor milestone 3 headless capture (2026-10-25)
+
+- The by-hand `exp/vmhost` setup (Linux, Xvfb, Mesa software GL; nothing committed) drove `-edit new`:
+  - a painted valve, ringed and selected, reported as "a valve must operate at least one gate";
+  - three gates painted with the gate brush, linked to it by bold lines, and the problem gone;
+  - O opened the valve and its gates;
+  - R shaded a walled-off room, and Cmd-click (Control under the driver) filled it with floor;
+  - in a playtest, Space at the valve opened all three gates: "Sluice gate open".
+- **A copy of cave 04:** Alt-click on a gate selected the valve, the gate brush and the ringed valve.
+- **One fault found and fixed:** the overlay shaded walls too, which hid what it is for.
 - This is Linux/OpenGL evidence only, not a Mac test.
