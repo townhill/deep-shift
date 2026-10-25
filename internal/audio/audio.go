@@ -1,5 +1,6 @@
-// Package audio plays sfx cues through Ebitengine's audio package. Like
-// internal/render it only presents: it never affects the simulation.
+// Package audio plays sfx cues and the looping music through Ebitengine's
+// audio package. Like internal/render it only presents: it never affects the
+// simulation.
 //
 // Ebitengine creates the audio device on the first update. On macOS it uses
 // AudioToolbox and on Linux ALSA or PulseAudio, all without cgo, so this
@@ -8,26 +9,36 @@
 package audio
 
 import (
+	"bytes"
+
 	"github.com/hajimehoshi/ebiten/v2/audio"
 
 	"github.com/townhill/deep-shift/internal/sfx"
 )
 
-// Player plays sound cues. A nil *Player is valid and silent, for running
-// without an audio device.
+// Player plays sound cues and the music. A nil *Player is valid and silent,
+// for running without an audio device.
 type Player struct {
 	players [sfx.CueCount]*audio.Player
+	music   *audio.Player
 	muted   bool
+	musicOn bool
 }
 
-// New creates the process's audio context and one player per cue. Call it at
-// most once.
+// New creates the process's audio context, one player per cue and the
+// music, which loops forever and starts paused. Call it at most once.
 func New() *Player {
 	ctx := audio.NewContext(sfx.SampleRate)
 	p := &Player{}
 	for c := sfx.Cue(0); c < sfx.CueCount; c++ {
 		p.players[c] = ctx.NewPlayerFromBytes(sfx.PCM(c))
 	}
+	pcm := sfx.MusicPCM()
+	music, err := ctx.NewPlayer(audio.NewInfiniteLoop(bytes.NewReader(pcm), int64(len(pcm))))
+	if err != nil {
+		panic(err) // never for an in-memory stream, as NewPlayerFromBytes assumes
+	}
+	p.music = music
 	return p
 }
 
@@ -44,7 +55,8 @@ func (p *Player) Play(c sfx.Cue) {
 	pl.Play()
 }
 
-// SetMuted turns sound off (stopping anything playing) or back on.
+// SetMuted turns the cues off (stopping any playing) or back on. The music
+// has its own switch, SetMusic.
 func (p *Player) SetMuted(muted bool) {
 	if p == nil {
 		return
@@ -57,5 +69,15 @@ func (p *Player) SetMuted(muted bool) {
 	}
 }
 
-// Muted reports whether sound is off. A nil Player is always muted.
-func (p *Player) Muted() bool { return p == nil || p.muted }
+// SetMusic plays or pauses the music. Paused music resumes where it stopped.
+func (p *Player) SetMusic(on bool) {
+	if p == nil || on == p.musicOn {
+		return
+	}
+	p.musicOn = on
+	if on {
+		p.music.Play()
+	} else {
+		p.music.Pause()
+	}
+}
