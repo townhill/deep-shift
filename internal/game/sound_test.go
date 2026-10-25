@@ -3,6 +3,8 @@ package game
 import (
 	"strings"
 	"testing"
+
+	"github.com/townhill/deep-shift/internal/editor"
 )
 
 func TestSoundKeys(t *testing.T) {
@@ -81,6 +83,28 @@ func TestPausedCaveHoldsTheMusic(t *testing.T) {
 	}
 }
 
+func TestPausedPlaytestHoldsTheMusic(t *testing.T) {
+	sh, _ := newEditorShell(t)
+	if err := sh.OpenEditor(editor.CopyOf(embeddedCave(t, "cave_01")), ""); err != nil {
+		t.Fatal(err)
+	}
+	s := NewSound(true, true)
+	sh.UpdateEditor(editor.Input{})
+	if sh.Paused() || !s.MusicPlaying(sh.Paused()) {
+		t.Fatal("no music in the editor")
+	}
+	editorTap(sh, editor.Input{Playtest: true})
+	press(sh, Controls{}) // release, as after any screen change
+	press(sh, Controls{Pause: true})
+	if sh.Screen() != ScreenPlaytest || !sh.Paused() || s.MusicPlaying(sh.Paused()) {
+		t.Fatalf("screen %d: music plays while the playtest is paused", sh.Screen())
+	}
+	press(sh, Controls{Pause: true})
+	if sh.Paused() || !s.MusicPlaying(sh.Paused()) {
+		t.Fatal("the music did not resume with the playtest")
+	}
+}
+
 // The HUD and menus draw text in the 2x debug font, 12 px a glyph, on a
 // 960 px wide screen, the HUD from x = 8 (internal/render), so a line holds
 // 79 characters.
@@ -89,7 +113,11 @@ func TestKeyHintsFitTheirLines(t *testing.T) {
 	title := sh.Menu().Footer
 	press(sh, Controls{Down: true})
 	press(sh, Controls{Interact: true})
-	for _, hint := range []string{ControlsHint, title, sh.Menu().Footer} {
+	hints := []string{ControlsHint, title, sh.Menu().Footer}
+	ed, _ := newEditorShell(t)
+	openEditList(t, ed)
+	hints = append(hints, ed.Menu().Footer)
+	for _, hint := range hints {
 		if len(hint) > 79 {
 			t.Errorf("%q is %d characters, more than the 79 that fit", hint, len(hint))
 		}

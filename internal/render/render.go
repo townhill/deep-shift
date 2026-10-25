@@ -1,7 +1,8 @@
-// Package render draws game.Frames with Ebitengine.
+// Package render draws game.Frames, menus and the cave editor's View with
+// Ebitengine.
 //
 // It only reads Frames (copies of simulation state plus presentation data)
-// and never touches the simulation. Its output has not been observed in a
+// and editor Views, and never touches the simulation. Its output has not been observed in a
 // real macOS window yet: compile-only, pending Mac playtest.
 package render
 
@@ -157,7 +158,6 @@ func (r *Renderer) drawWater(f game.Frame, x0, y0 int, camX, camY float64) {
 	if len(f.Water) != len(snap.Cells) {
 		return
 	}
-	op := &ebiten.DrawImageOptions{}
 	for y := max(y0, 0); y <= min(y0+ViewTilesH, snap.Height-1); y++ {
 		for x := max(x0, 0); x <= min(x0+ViewTilesW, snap.Width-1); x++ {
 			i := y*snap.Width + x
@@ -166,17 +166,24 @@ func (r *Renderer) drawWater(f game.Frame, x0, y0 int, camX, camY float64) {
 				continue
 			}
 			left, top := float64(x*TileSize)-camX, float64(y*TileSize)-camY
-			h := level / sim.WaterCapacity * TileSize
-			r.fillRectF(r.world, left, top+TileSize-h, TileSize, h, waterColour)
-			if y == 0 || f.Water[i-snap.Width] <= 0 {
-				r.fillRectF(r.world, left, top+TileSize-h, TileSize, 2, waterSurfaceColour)
-			}
-			if snap.Cells[i].Deep() {
-				op.GeoM.Reset()
-				op.GeoM.Translate(left, top)
-				r.world.DrawImage(r.tiles[sprites.Waves], op)
-			}
+			r.drawWaterCell(r.world, left, top, level, y == 0 || f.Water[i-snap.Width] <= 0, snap.Cells[i].Deep())
 		}
+	}
+}
+
+// drawWaterCell draws water filling a cell's tile at left, top to level
+// (0..sim.WaterCapacity), with a bright line at the top of a surface cell and
+// wave lines on a deep one.
+func (r *Renderer) drawWaterCell(dst *ebiten.Image, left, top, level float64, surface, deep bool) {
+	h := level / sim.WaterCapacity * TileSize
+	r.fillRectF(dst, left, top+TileSize-h, TileSize, h, waterColour)
+	if surface {
+		r.fillRectF(dst, left, top+TileSize-h, TileSize, 2, waterSurfaceColour)
+	}
+	if deep {
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Translate(left, top)
+		dst.DrawImage(r.tiles[sprites.Waves], op)
 	}
 }
 

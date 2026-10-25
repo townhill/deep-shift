@@ -710,129 +710,278 @@ and water are stable, with tests for movement order, collision and reset.
 - **Menus:** the cave list shows Crawler Warren under Extras, before the Proving Ground.
 - Linux/OpenGL evidence only, not a Mac test.
 
-## D-045: Glimmers and shattering (rule version 5, owner decisions)
+## D-045: The cave editor, milestone 1 (owner decision)
 
-- **Request (owner, 2026-10-25):** in the 1984 game, a rock falling on a butterfly turned it into
-  diamonds; add that mechanic. The plan offered five choices with recommendations, and the owner took all
-  five:
-  1. **A 3×3 shattering that destroys nothing.** Only empty, dry floor in the block becomes crystal. A
-     faithful explosion would destroy terrain and kill a player in range, which needs damage rules first:
-     SPEC §7 lists explosives as "Later", with "damage/explosion events" as the prerequisite.
-  2. **An original name, the glimmer.** SPEC §1 asks for original terminology.
-  3. **The right-hand rule.** A glimmer is the crawler's mirror image, which is follow-up F-20's "right-hand
-     crawler", and its path tells it apart from a crawler at a glance.
-  4. **A drowned glimmer leaves nothing.** Crystals cannot share a cell with water (D-028), so crystals
-     formed in water would break conservation. It also makes flood-or-crush a real choice.
-  5. **A shattering never harms the player,** in line with D-041's "danger only on contact".
-- **Movement:** right, ahead, left, behind relative to its facing, and the first open cell wins. Otherwise
-  everything is the crawler's: the cadence (`CrawlerIntervalTicks`), catching the player either way,
-  refusing water, drowning, no gravity. Crawlers and glimmers share **one** scan, so of two creatures
-  wanting a cell, the first in row-major order gets it, whichever kind it is.
-- **Shattering:** a **falling** boulder or crystal landing on a glimmer removes it and leaves a crystal in
-  its cell and in every empty, dry floor cell of the 3×3 block around it, in row-major order. Earth,
-  walls, the exit, gates, valves, objects, creatures, the player and wet cells are left alone.
-  - **The object stops** where it was and lands, rather than falling on through as it does after crushing
-    a crawler: the glimmer's cell now holds a crystal.
-  - **At least one crystal:** water drowns a glimmer in the step it arrives, so a glimmer's cell is always
-    dry when gravity runs.
-  - **New crystals rest and sit out the rest of that gravity step,** like a pushed boulder (D-018). No
-    object moves twice in a tick (SPEC §5), and a crystal formed over the player's head cannot crush them
-    on its first step. They fall and roll from the next step.
-  - **Events:** `glimmer-shattered` (object → glimmer), `crystal-formed` for each crystal, then `landed`.
-- **Quota:** a cave may count on up to `ShatterCrystals = 9` crystals per glimmer. That only rules out an
-  exit that could never open; a completion replay shows a cave can be finished.
-- **Events and state:** new events `glimmer-moved`, `glimmer-shattered`, `crystal-formed` and
-  `glimmer-drowned`. `player-caught` now names the creature. Glimmers reuse the facing byte, so the hash
-  layout stays v4; only the rule version changed.
-- **Fixture review:** all eleven earlier golden replays have no glimmers. Traced on master and on this
-  build, they agree on every tick's events and grid; only `rule_version` and the two hashes changed.
+- On 2026-10-25 the owner chose the **cave editor** as the next Phase 5 item (SPEC §8 "Level editor", §11
+  Phase 5). They accepted a three-milestone plan and asked for playtesting to be part of the first:
+  1. paint, validate, save and **playtest** (this change);
+  2. the player's own caves in the cave list, and replays of playtests;
+  3. valves, gates and their links, plus design aids.
+- **Built into the game app,** not a separate program. This matches SPEC §14's "native integrated cave
+  editor, quick playtesting", needs no second `.app`, and reuses the renderer, the sprites and
+  `game.Session`.
+- **Offered to everyone** from the title menu ("Cave editor"), and with `-edit FILE|ID|new` for
+  development.
+- **SPEC §8's minimum is met:** painting terrain; placing the player, boulders, crystals, the exit and
+  water; save and load with validation. Crawlers are paintable too, since they are only arrows in the
+  rows. Valves and gates are not yet, because they need linking into mechanisms (milestone 3).
+- Like D-033 and D-040, this goes ahead before the pending Mac playtests. No rule changes: rule version 4,
+  cave format version 4, and every golden replay unchanged.
+
+## D-046: Canonical cave layout, `cavetool fmt`, and drafts
+
+- **Writing caves.** The editor must write caves back to JSON. `level.Draft` is a cave file's content
+  before validation, and `Draft.Encode` writes the layout the hand-made caves already used:
+  - fields in documentation order;
+  - one row per line, so the grid reads as a picture in a diff;
+  - one mechanism per line;
+  - metadata keys sorted;
+  - no `mechanisms` or `metadata` field when there are none.
+- **The embedded caves are canonical.** Two caves wrote their mechanisms over several lines, so `cavetool
+  fmt` reformatted them (cave 05, Crawler Warren).
+  - `Checksum` hashes parsed values, not text, so their checksums are unchanged and every golden replay
+    still matches.
+  - A test and a CI step (`cavetool fmt -check`) keep the embedded caves canonical.
+  - So the editor opens and saves any embedded cave byte for byte, which is tested for all seven.
+- **Work in progress.** `level.DecodeDraft` reads a cave checking only the JSON shape, so the editor can
+  reopen a cave saved with problems and fix it. `level.Parse`, which the game uses, is unchanged.
+- **Located problems.** `level.Problem.At` lists the cells a problem concerns, so the editor can outline
+  them:
+  - unknown symbols, and symbols too new for the file's format version;
+  - extra player starts or exits;
+  - wrong or unlisted valve and gate cells, and gate state mismatches.
+- **One validator.** The editor validates by encoding the cave and running `level.Parse`, the game's own
+  loader. Validation lives in one place, and the editor and the game cannot disagree.
+
+## D-047: A cave keeps its format version
+
+- A cave's `format_version` is part of its checksum, so changing it breaks the cave's golden replays.
+- The editor **keeps the version it opened**. Painting a symbol the version cannot hold raises it to the
+  first version that can, and says that replays of the old version will not match. For example, water in
+  the version 1 Proving Ground raises it to version 3.
+- The version is never lowered. A new cave uses the current version.
+- A file with no version, or one too old, opens as the current version; such a file never loaded in the
+  game, so no replay depends on it. A file newer than this build does not open.
+
+## D-048: Editing, saving and the editor's keys
+
+- **Layout.** A status bar (cave, size, quota, problems, unsaved), a 30×16-tile view, and a bottom bar
+  with the palette and the first problems. `editor.Layout` describes it for both hit-testing and drawing.
+  It is pure Go (like `Camera`, D-012), so the mouse mapping is unit-tested.
+- **Brushes (1 to 9):** wall, earth, floor, crystal, boulder, player start, exit, water, crawler.
+  - Pressing a brush's key again, or clicking its slot, moves to the next variant: water from deep to 1,
+    and crawlers turning clockwise.
+  - A new cave starts as one screen of earth in a wall, with the player start and the exit in opposite
+    corners and no quota.
+- **The mouse:**
+  - left drag paints along the pointer's path, with no gaps however fast it moves;
+  - right drag erases to floor;
+  - Shift-drag fills a box on release;
+  - Alt-click picks the brush of a cell;
+  - Esc cancels a stroke in progress.
+- **Moving the view:** arrows, WASD or the wheel scroll it. A cave smaller than the view is centred.
+- **An edit changes only the cells painted, with two exceptions:**
+  - The player start and the exit **move** rather than duplicate, since a cave needs exactly one of each.
+    A box of either places one, where the drag ended.
+  - Painting over a valve or gate **takes it out of its mechanism**. A removed valve takes its mechanism
+    with it, and its gates are outlined as unlisted until they are removed. Nothing else changes behind
+    the designer's back.
+- **Resizing.** Cmd+arrow adds a column or row on that side; Cmd+Shift+arrow removes one.
+  - New cells are wall, the neutral fill at a cave's edge.
+  - Mechanism positions move with their cells, and the view stays on the same cells.
+  - The size limits are 1 to 256 each way.
+- **Undo and settings.**
+  - Undo (Cmd+Z) and redo (Cmd+Shift+Z) take one step per stroke, box, resize or settings change, 200
+    steps deep.
+  - Tab opens the settings: title, id, seed and quota, edited as text. Ids accept only valid characters;
+    the seed and quota take digits, and the seed is range-checked.
+- **Saving (Cmd+S):**
+  - A file opened from disk saves back to it.
+  - A new cave or a copy saves as `<id>.json` in `~/Library/Application Support/Deep Shift/caves/`
+    (`-caves-dir`). It never replaces an existing file without a second Cmd+S.
+  - Writes are atomic: a temporary file, then a rename.
+  - **A cave with problems still saves,** with a warning, so work is never lost; the game will not play it
+    until they are fixed.
+  - Esc with unsaved changes asks first.
+  - A copy of a built-in cave gets `_copy` and ` (copy)` added to its id and title, and
+    `{"based_on": <id>}` as metadata. Its layout, and so its checksum, is the original's.
+- **Shortcuts in text fields.** F, M and `` ` `` are not shortcuts while a settings field is being typed
+  into.
+- **Cmd or Control.** Cmd shortcuts accept Command or Control, for keyboards without a Command key. On a
+  Mac, Ctrl+arrows would switch Spaces, so Cmd is the one to use there.
+- **Not yet built:**
+  - valve and gate brushes (done in milestone 3: D-052);
+  - editing metadata;
+  - "save as" (a cave keeps the file name of its first save, even if its id changes);
+  - a full problem list (the bar shows the first one or two, and outlines every cell concerned).
+
+## D-049: Playtests
+
+- **P plays the cave as it stands.**
+  - The editor validates it with `level.Parse`. The shell starts an ordinary `game.Session` on the
+    resulting level, so a playtest is the game, not an imitation: cave 01's golden replay completes a copy
+    of cave 01 in a playtest, with the same final hash (tested).
+  - A cave with problems cannot be playtested, and the bar says how many problems are left to fix.
+- **P returns to the editor at any time,** with every edit, the view and the undo history intact.
+  - The overlays say "P: back to the editor" instead of the playlist's N and C, which do nothing in a
+    playtest (`Session.SetNavKeys`).
+  - The shell feeds exactly one of its inputs per update, chosen by the screen at the update's start, and
+    the editor ignores input until every key is released. So the P that ends a playtest never starts
+    another.
+- **Playtests are not saved as replays.** The cave may not be saved, and a replay is only useful beside its
+  cave file. Replays of saved, unchanged caves are milestone 2 (done: D-051).
+- **Playtests are not campaign progress.** They never mark a cave "(done)".
+
+## D-012 addendum: `internal/editor` (2026-10-25)
+
+- `internal/editor` now exists, scoped as D-045 to D-049 describe. It is pure Go, like `internal/game`. A
+  test allows it only the standard library and the pure `internal/level` and `internal/sim` packages.
+- `internal/render` draws its `View`, and `cmd/deepshift` turns the mouse and keyboard into its `Input`.
+
+## D-014 addendum: cave editor headless capture (2026-10-25)
+
+- The by-hand `exp/vmhost` setup (Linux, Xvfb, Mesa software GL; nothing committed) drove the unmodified
+  app. The driver gained an `-args` flag for the guest's flags, and scripted mouse, key and typed-text
+  input. Four sessions were run:
+  - **The title menu** shows "Cave editor". Its list shows New cave, the copies of the built-in caves, and
+    "(more below)" where the list scrolls.
+  - **A new cave (`-edit new`).** Each of these drew as intended:
+    - crystals painted in a drag;
+    - the Shift-drag box preview, then the boulders it filled;
+    - deep and shallow water;
+    - a crawler, and the translucent preview of the crawler brush under the mouse;
+    - a wall over the exit, giving "1 problem" and "rows: no exit ('E') found" in the bar, then Cmd+Z;
+    - the settings panel, and a title typed into it.
+  - **A playtest of that cave.** It started with "Playtest: P returns to the editor". Its pause overlay
+    read "Esc: resume   R: restart   P: back to the editor", and P returned to the editor with every edit.
+    Cmd+S showed "Saved new_cave.json", and Esc showed the list with the saved cave selected under "Your
+    caves".
+  - **A copy of Crawler Warren** showed the valve's link to its gate. Painting over the valve outlined the
+    orphaned gate in red, with the problem text in the bar.
+  - **The 40×24 Proving Ground (a copy of its file)** scrolled to its edge and grew by two columns. Esc
+    with unsaved changes asked first, and the file was not touched.
+- **The capture found four faults, now fixed:**
+  - growing the cave left the new columns out of view;
+  - the grid was too faint to see;
+  - saved caves were private (0600) rather than 0644;
+  - the floor brush's slot was hard to see against the bar, so every slot now has a frame.
+- This is Linux/OpenGL evidence only, not a Mac test. The trackpad, Retina scaling, the Command key and
+  wheel direction on macOS still need a Mac.
+
+## D-050: My caves in the cave list (editor milestone 2)
+
+- **What it is.** The cave list gains a "My caves" section after the extras: the caves in the editor's
+  folder (`-caves-dir`). The folder is read afresh each time the list opens, so a cave saved a moment ago is
+  there.
+- **Playable caves play like any other.**
+  - N moves through the built-in caves, then the player's own, then wraps.
+  - Completing one marks it "(done)" for the run, as for any cave. The campaign count is unchanged.
+  - C from the pause, completion or death screen returns to the list with the cave just played selected.
+    The match is by file, since the list is rebuilt.
+- **A cave that cannot be played is still listed,** as "(cannot play)", so a cave saved with problems is not
+  silently missing. Choosing it says why:
+  - the file cannot be read;
+  - it has problems to fix in the Cave editor (with the count);
+  - its id is taken by a built-in cave, or by an earlier file in the folder.
+- **Why ids must be unique.** Completion marks and replays both name caves by id, so two caves sharing one
+  would be confused. The first in file-name order plays, and later ones say which file has the id.
+- **Validation.** A file is validated the same way as everywhere else: `level.Parse` of its canonical
+  encoding. That gives the same result and checksum as parsing the file itself (D-046).
+
+## D-051: Replays of playtests and of the player's caves
+
+- **Playtests are recorded when the cave is saved and unchanged.** Then a cave file matches the replay
+  exactly, and it can be re-run. A playtest of a new cave, a copy not yet saved, or a cave changed since its
+  last save is not recorded: the app says "Playtest not recorded: save the cave first (Cmd+S)". This
+  completes what D-049 left for milestone 2.
+- **The shell decides.** `Shell.FinishedAttempt` replaces the platform layer's own playtest rule, so the
+  rule is tested without a display.
+- **Replays of the player's caves name the cave file,** whether played from the list or playtested.
+  `cavetool replay` finds only built-in caves by id, so it needs the file as `-cave`.
+  - A playtest replay starts "Recorded in an editor playtest".
+  - Tests re-run both kinds with `replay.Run` against the saved file and check their expect blocks.
+  - In the headless capture, `cavetool replay -cave` matched a playtest replay the app saved.
+
+## D-014 addendum: editor milestone 2 headless capture (2026-10-25)
+
+- The by-hand `exp/vmhost` setup (Linux, Xvfb, Mesa software GL; nothing committed) used a scratch caves
+  folder. It held a copy of cave 01 under a new id, a cave with an impossible quota, and a one-step cave.
+- **The cave list:**
+  - "My caves" follows the extras, with the cave with problems marked "(cannot play)";
+  - choosing it showed "Cannot play wip.json: 1 problem; fix it in the Cave editor";
+  - choosing the copy played it, its title in the HUD.
+- **Playtests:**
+  - a playtest of the saved one-step cave showed "Replay saved: one_step-complete-….json", and `cavetool
+    replay -cave` matched the file;
+  - after an edit, the next playtest showed "Playtest not recorded: save the cave first (Cmd+S)", and no
+    second file was written.
+- This is Linux/OpenGL evidence only, not a Mac test.
+
+## D-052: Valves, gates and their links (editor milestone 3)
+
+- **Two brushes:** Valve (0) and Gate (-). Every valve and gate must belong to exactly one mechanism, and a
+  gate must be open exactly when its valve is (D-029, D-031). The editor maintains that as it goes, so
+  linking needs no separate mode.
+  - **A painted valve** is shut and gets a mechanism of its own. It becomes the **selected valve**, ringed
+    in yellow, with its links drawn bold. Until it has a gate, validation reports it, outlined.
+  - **A painted gate** joins the selected valve's mechanism, open or closed to match it. A gate already
+    linked to another valve moves to the selected one.
+  - **With no valve selected,** a new gate is left unlinked: it is reported and outlined, and the bar says
+    to paint or select a valve. Repainting an existing gate with no valve selected leaves it as it was.
+  - **Alt-click on a valve or gate** selects its valve and the gate brush, so gates can be added to an
+    existing mechanism, such as cave 04's.
+  - **O on a valve or gate** opens or closes the whole mechanism at once. That is how the cave starts,
+    as if the valve were turned before the first tick; no current cave starts open.
+- **Removing.** Painting over a valve or gate unlinks it, as in milestone 1. A removed valve takes its
+  mechanism with it, and the selection goes too.
+- **Boxes and fills of valves place one,** at the end of the gesture, like the player start and exit. A box
+  of valves, each with no gates, is never wanted.
+- **Format version.** Valves and gates need format version 3, so painting one raises an older cave's
+  version, with the usual warning (D-047).
 - **Evidence:**
-  - a mirror test: 30 random caves, each run again mirrored with crawlers and glimmers swapped, match
-    tick for tick;
-  - a table of every kind of neighbour, for falling boulders and falling crystals;
-  - randomised runs that check every shattering's crystals and the crystal count;
-  - five mutations, each caught: new crystals not waiting a step, glimmers using the left-hand rule,
-    crystals forming in water, resting objects shattering, and a block that wraps around the cave edge.
+  - the random-input invariants now check every mechanism after every step: valves are valves, gates are
+    gates, each linked once, and gates match their valve;
+  - a test builds a sluice in the editor and turns its valve in the simulation;
+  - a shell test playtests one and opens its gate with Space.
 
-## D-046: Cave format version 5
+## D-053: The reach overlay
 
-- Rows may contain a glimmer, written as the triangle pointing the way it starts facing: `▲` `▼` `◀` `▶`.
-  Triangles read as facings like the crawler arrows (D-042) and cannot be mistaken for them. Dumps use the
-  same symbols.
-- `required_crystals` may exceed the crystals in the rows by up to 9 per glimmer, matching the simulation.
-  The error for a quota that is too high states the sum.
-- A triangle in a file below version 5 is rejected with the version it needs; older files are unchanged.
-  `cavetool validate` reports glimmer counts.
+- **R shades the cells the player cannot reach** from the start by walking and digging alone, with nothing
+  else moving. The bar gives a summary: reachable crystals against the quota, and whether the exit is
+  reached.
+- **The rules it follows:**
+  - **entered:** floor, open gates, shallow water, earth, crystals and crawlers (a crawler moves on);
+  - **blocked:** walls, closed gates, valves, deep water, boulders and unknown symbols;
+  - **the exit** is reached, but not passed, since entering it ends the cave.
+- **It is a first look, not a solver.** Boulders fall and can be pushed, valves turned and water drained,
+  so a cave can be solvable when the overlay says not, and the reverse. Cave 04, for example, shows 3 of 9
+  crystals and no exit until its sluice is used. A solver over the real rules is a separate, larger
+  piece of work, like the planners used to design the campaign.
+- **Shading.** Walls are not shaded: they are never reachable, and shading them hid the floor and earth
+  that matter (seen in the headless capture).
 
-## D-047: Glimmer Hollow, the example cave
+## D-054: Flood fill, and copy and paste left for later
 
-- SPEC §7 again: the example cave is an **extra**, listed after Crawler Warren. It is 30×16 with a quota of
-  7, and has three glimmers, one per lesson:
-  1. **The ring:** a glimmer circles a pillar clockwise, the pillar on its right. Three crystals sit in
-     pockets on its left, safe places to wait while it passes, and the way in is on its left too.
-  2. **The vault:** a glimmer is boxed in under a closed sluice gate, with a boulder resting on the gate
-     between two walls. The vault's valve opens the gate, the boulder drops into it, and on the next
-     gravity step it shatters the glimmer into five crystals. Two rest beside the gate, two fall into a
-     basin, and the fifth stays sealed under the boulder.
-  3. **The flood:** a glimmer paces the corridor to the exit. A second valve drops nine units of water
-     into its middle, which drowns it whatever the timing, leaves no crystals, and settles 1,2,3,2,1, so
-     the player can wade through (D-043's corridor, reused).
-- **Why a vault rather than a pushed boulder.** A pushed boulder catches a glimmer at the same moment
-  only if the glimmer is confined to the column it falls down, and in a one-wide shaft the walls leave
-  room for at most two crystals. Any open floor beside the glimmer is open to the glimmer too, so it would
-  walk off. A boxed-in glimmer stays put, and the four cells diagonal to it can be open floor that it cannot
-  reach. A gate is the one thing that stops a glimmer leaving yet lets a boulder in. **Gravity runs before
-  creatures in every tick,** so the boulder always fills the opened gate before the glimmer could step into
-  it: the vault pays out five crystals whenever it is opened. Its boulder sits between walls, so it cannot
-  be pushed off the gate, which would make the cave impossible.
-- **The quota needs both lessons:** the 5 placed crystals fall short, and so do the 2 outside the ring's
-  pockets plus the 4 vault crystals the player can reach.
-- **Evidence:** a completion replay and a caught-by-a-glimmer replay, both in the 100-run determinism
-  check. Tests also:
-  - follow the ring glimmer round a whole lap, clockwise;
-  - check that the vault glimmer is boxed in and its boulder cannot be pushed;
-  - open the vault on every tick of a 12-tick window: always the same five crystals;
-  - open the sluice at every point of the corridor patrol: always drowned, no crystals, 1,2,3,2,1;
-  - show that the quota needs both lessons and that the corridor is the only way to the exit.
+- **Cmd-click flood-fills** the 4-connected area of cells matching the clicked cell with the brush, as one
+  undo step. Cmd-right-click fills it with floor. Filling with a player start, exit or valve places one,
+  like a box.
+- **Cmd or Control.** Cmd-click accepts Control-click too, like the other Cmd shortcuts (D-048).
+- **Copy and paste is not in this milestone.** It needs a selection separate from the Shift-drag box, and
+  copied valves and gates must keep their links, joined to a copied valve or to the selected one. That
+  deserves its own change: follow-up F-27.
 
-  With the gravity and creature phases swapped, the vault test fails: the glimmer escapes through the gate.
-- **Known way to lose:** digging down into the corridor before opening the sluice lets the corridor
-  glimmer climb out up the player's tunnel, as in Crawler Warren. The sluice valve stands at the top of
-  that tunnel, so flooding first is the natural order.
+## D-014 addendum: editor milestone 3 headless capture (2026-10-25)
 
-## D-048: Presenting glimmers
+- The by-hand `exp/vmhost` setup (Linux, Xvfb, Mesa software GL; nothing committed) drove `-edit new`:
+  - a painted valve, ringed and selected, reported as "a valve must operate at least one gate";
+  - three gates painted with the gate brush, linked to it by bold lines, and the problem gone;
+  - O opened the valve and its gates;
+  - R shaded a walled-off room, and Cmd-click (Control under the driver) filled it with floor;
+  - in a playtest, Space at the valve opened all three gates: "Sluice gate open".
+- **A copy of cave 04:** Alt-click on a gate selected the valve, the gate brush and the ringed valve.
+- **One fault found and fixed:** the overlay shaded walls too, which hid what it is for.
+- This is Linux/OpenGL evidence only, not a Mac test.
 
-- **Sprite:** an original winged creature drawn in code, with amber wings, a dark body and a cyan crystal
-  shard on its back: the crystals it holds. Its head and knobbed antennae point the way it faces, one
-  drawing turned four ways like the crawler. Wide wings and no legs give it a different outline from the
-  six-legged crawler (checked by the sprite shape test), not only a different colour.
-- **Movement:** glimmers glide over a whole creature interval, like crawlers (D-044). A shattered or drowned
-  glimmer stops being drawn at once, even mid-glide.
-- **Prompts:**
-  - a glimmer cave opens with "Glimmers keep the wall on their right: drop a rock on one for crystals",
-    and a cave with both kinds of creature names both walls;
-  - a shattering says how many crystals it left ("…shattered a glimmer into 5 crystals");
-  - a drowning says the glimmer "left no crystals".
-- **Death screen:** CAUGHT names the creature and the wall it keeps. The caught player is tinted amber for
-  a glimmer and violet for a crawler, and logged replays say which creature caught them.
-- **Sound:** a new cue, a glassy crack and a quick run of high chimes, for a shattering, reported once per
-  tick with the landing thud. Crystals forming make no sound of their own. A drowned glimmer uses the
-  crawler's wet pop, renamed `creature-gone`.
-
-## D-014 addendum: glimmer frames captured (2026-10-25)
-
-- A scratch program, not committed, ran the real `game.Session` and `render.Renderer` in an Ebitengine
-  window under Xvfb with Mesa software GL. It drove both Glimmer Hollow fixtures with the same key-press
-  timing as the session tests, and paused the simulation at chosen ticks to save the frame. Unlike the
-  earlier captures it did not use `exp/vmhost`, and it captured no audio.
-- **Observed:**
-  - the opening prompt and all three glimmers facing their way;
-  - the vault boulder gliding into the opened gate;
-  - the five crystals around it after the shattering, with the "into 5 crystals" prompt;
-  - the two lower crystals resting in the basin;
-  - the corridor flooding, with the drowned-glimmer prompt;
-  - the CAUGHT screen, naming the glimmer and the right-hand wall, with the player drawn shrunk and amber.
-- Linux/OpenGL evidence only, not a Mac test. The shatter cue's sound has not been heard.
 ## D-055: Arcade music (owner decision)
 
 Numbered D-055 because the open cave-editor pull requests already use D-045 to D-054 (and follow-ups F-23
@@ -910,3 +1059,141 @@ ambience/music".
   app never rewinds or seeks the music on resume, but not how a real device sounds at a pause. No cue
   played in these runs, so M was checked against the music only. Linux/OpenGL evidence only; the music has
   not been heard on a Mac.
+
+## D-055 addendum: the music and the cave editor (2026-10-25)
+
+The music (D-055) reached master before the editor, so the editor branch took it in with a merge. Where
+the two meet:
+
+- **B is not a shortcut in a text field,** like F, M and `` ` `` (D-048): while a settings field is being
+  typed into, B is a letter.
+- **A paused playtest holds the music,** like a paused cave. `Shell.Paused` covers both, and a test pauses
+  a playtest and checks.
+- **The music plays in the edit list and the editor,** as on the other menus, and B turns it off. The edit
+  list's footer names M and B; the editor's key bar has no room for them.
+- **No text notice outside caves and playtests:** in the editor, as on the menus, M and B change the sound
+  without a message.
+
+## D-056: Glimmers and shattering (rule version 5, owner decisions)
+
+- **Request (owner, 2026-10-25):** in the 1984 game, a rock falling on a butterfly turned it into
+  diamonds; add that mechanic. The plan offered five choices with recommendations, and the owner took all
+  five:
+  1. **A 3×3 shattering that destroys nothing.** Only empty, dry floor in the block becomes crystal. A
+     faithful explosion would destroy terrain and kill a player in range, which needs damage rules first:
+     SPEC §7 lists explosives as "Later", with "damage/explosion events" as the prerequisite.
+  2. **An original name, the glimmer.** SPEC §1 asks for original terminology.
+  3. **The right-hand rule.** A glimmer is the crawler's mirror image, which is follow-up F-20's "right-hand
+     crawler", and its path tells it apart from a crawler at a glance.
+  4. **A drowned glimmer leaves nothing.** Crystals cannot share a cell with water (D-028), so crystals
+     formed in water would break conservation. It also makes flood-or-crush a real choice.
+  5. **A shattering never harms the player,** in line with D-041's "danger only on contact".
+- **Movement:** right, ahead, left, behind relative to its facing, and the first open cell wins. Otherwise
+  everything is the crawler's: the cadence (`CrawlerIntervalTicks`), catching the player either way,
+  refusing water, drowning, no gravity. Crawlers and glimmers share **one** scan, so of two creatures
+  wanting a cell, the first in row-major order gets it, whichever kind it is.
+- **Shattering:** a **falling** boulder or crystal landing on a glimmer removes it and leaves a crystal in
+  its cell and in every empty, dry floor cell of the 3×3 block around it, in row-major order. Earth,
+  walls, the exit, gates, valves, objects, creatures, the player and wet cells are left alone.
+  - **The object stops** where it was and lands, rather than falling on through as it does after crushing
+    a crawler: the glimmer's cell now holds a crystal.
+  - **At least one crystal:** water drowns a glimmer in the step it arrives, so a glimmer's cell is always
+    dry when gravity runs.
+  - **New crystals rest and sit out the rest of that gravity step,** like a pushed boulder (D-018). No
+    object moves twice in a tick (SPEC §5), and a crystal formed over the player's head cannot crush them
+    on its first step. They fall and roll from the next step.
+  - **Events:** `glimmer-shattered` (object → glimmer), `crystal-formed` for each crystal, then `landed`.
+- **Quota:** a cave may count on up to `ShatterCrystals = 9` crystals per glimmer. That only rules out an
+  exit that could never open; a completion replay shows a cave can be finished.
+- **Events and state:** new events `glimmer-moved`, `glimmer-shattered`, `crystal-formed` and
+  `glimmer-drowned`. `player-caught` now names the creature. Glimmers reuse the facing byte, so the hash
+  layout stays v4; only the rule version changed.
+- **Fixture review:** all eleven earlier golden replays have no glimmers. Traced on master and on this
+  build, they agree on every tick's events and grid; only `rule_version` and the two hashes changed.
+- **Evidence:**
+  - a mirror test: 30 random caves, each run again mirrored with crawlers and glimmers swapped, match
+    tick for tick;
+  - a table of every kind of neighbour, for falling boulders and falling crystals;
+  - randomised runs that check every shattering's crystals and the crystal count;
+  - five mutations, each caught: new crystals not waiting a step, glimmers using the left-hand rule,
+    crystals forming in water, resting objects shattering, and a block that wraps around the cave edge.
+
+## D-057: Cave format version 5
+
+- Rows may contain a glimmer, written as the triangle pointing the way it starts facing: `▲` `▼` `◀` `▶`.
+  Triangles read as facings like the crawler arrows (D-042) and cannot be mistaken for them. Dumps use the
+  same symbols.
+- `required_crystals` may exceed the crystals in the rows by up to 9 per glimmer, matching the simulation.
+  The error for a quota that is too high states the sum.
+- A triangle in a file below version 5 is rejected with the version it needs; older files are unchanged.
+  `cavetool validate` reports glimmer counts.
+
+## D-058: Glimmer Hollow, the example cave
+
+- SPEC §7 again: the example cave is an **extra**, listed after Crawler Warren. It is 30×16 with a quota of
+  7, and has three glimmers, one per lesson:
+  1. **The ring:** a glimmer circles a pillar clockwise, the pillar on its right. Three crystals sit in
+     pockets on its left, safe places to wait while it passes, and the way in is on its left too.
+  2. **The vault:** a glimmer is boxed in under a closed sluice gate, with a boulder resting on the gate
+     between two walls. The vault's valve opens the gate, the boulder drops into it, and on the next
+     gravity step it shatters the glimmer into five crystals. Two rest beside the gate, two fall into a
+     basin, and the fifth stays sealed under the boulder.
+  3. **The flood:** a glimmer paces the corridor to the exit. A second valve drops nine units of water
+     into its middle, which drowns it whatever the timing, leaves no crystals, and settles 1,2,3,2,1, so
+     the player can wade through (D-043's corridor, reused).
+- **Why a vault rather than a pushed boulder.** A pushed boulder catches a glimmer at the same moment
+  only if the glimmer is confined to the column it falls down, and in a one-wide shaft the walls leave
+  room for at most two crystals. Any open floor beside the glimmer is open to the glimmer too, so it would
+  walk off. A boxed-in glimmer stays put, and the four cells diagonal to it can be open floor that it cannot
+  reach. A gate is the one thing that stops a glimmer leaving yet lets a boulder in. **Gravity runs before
+  creatures in every tick,** so the boulder always fills the opened gate before the glimmer could step into
+  it: the vault pays out five crystals whenever it is opened. Its boulder sits between walls, so it cannot
+  be pushed off the gate, which would make the cave impossible.
+- **The quota needs both lessons:** the 5 placed crystals fall short, and so do the 2 outside the ring's
+  pockets plus the 4 vault crystals the player can reach.
+- **Evidence:** a completion replay and a caught-by-a-glimmer replay, both in the 100-run determinism
+  check. Tests also:
+  - follow the ring glimmer round a whole lap, clockwise;
+  - check that the vault glimmer is boxed in and its boulder cannot be pushed;
+  - open the vault on every tick of a 12-tick window: always the same five crystals;
+  - open the sluice at every point of the corridor patrol: always drowned, no crystals, 1,2,3,2,1;
+  - show that the quota needs both lessons and that the corridor is the only way to the exit.
+
+  With the gravity and creature phases swapped, the vault test fails: the glimmer escapes through the gate.
+- **Known way to lose:** digging down into the corridor before opening the sluice lets the corridor
+  glimmer climb out up the player's tunnel, as in Crawler Warren. The sluice valve stands at the top of
+  that tunnel, so flooding first is the natural order.
+
+## D-059: Presenting glimmers
+
+- **Sprite:** an original winged creature drawn in code, with amber wings, a dark body and a cyan crystal
+  shard on its back: the crystals it holds. Its head and knobbed antennae point the way it faces, one
+  drawing turned four ways like the crawler. Wide wings and no legs give it a different outline from the
+  six-legged crawler (checked by the sprite shape test), not only a different colour.
+- **Movement:** glimmers glide over a whole creature interval, like crawlers (D-044). A shattered or drowned
+  glimmer stops being drawn at once, even mid-glide.
+- **Prompts:**
+  - a glimmer cave opens with "Glimmers keep the wall on their right: drop a rock on one for crystals",
+    and a cave with both kinds of creature names both walls;
+  - a shattering says how many crystals it left ("…shattered a glimmer into 5 crystals");
+  - a drowning says the glimmer "left no crystals".
+- **Death screen:** CAUGHT names the creature and the wall it keeps. The caught player is tinted amber for
+  a glimmer and violet for a crawler, and logged replays say which creature caught them.
+- **Sound:** a new cue, a glassy crack and a quick run of high chimes, for a shattering, reported once per
+  tick with the landing thud. Crystals forming make no sound of their own. A drowned glimmer uses the
+  crawler's wet pop, renamed `creature-gone`.
+
+## D-014 addendum: glimmer frames captured (2026-10-25)
+
+- A scratch program, not committed, ran the real `game.Session` and `render.Renderer` in an Ebitengine
+  window under Xvfb with Mesa software GL. It drove both Glimmer Hollow fixtures with the same key-press
+  timing as the session tests, and paused the simulation at chosen ticks to save the frame. Unlike the
+  earlier captures it did not use `exp/vmhost`, and it captured no audio.
+- **Observed:**
+  - the opening prompt and all three glimmers facing their way;
+  - the vault boulder gliding into the opened gate;
+  - the five crystals around it after the shattering, with the "into 5 crystals" prompt;
+  - the two lower crystals resting in the basin;
+  - the corridor flooding, with the drowned-glimmer prompt;
+  - the CAUGHT screen, naming the glimmer and the right-hand wall, with the player drawn shrunk and amber.
+- Linux/OpenGL evidence only, not a Mac test. The shatter cue's sound has not been heard.

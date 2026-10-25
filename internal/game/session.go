@@ -56,6 +56,9 @@ const (
 // promptUpdates is how long transient HUD prompts stay visible.
 const promptUpdates = 2 * UpdatesPerSecond
 
+// playlistKeys are the overlay's navigation hints in a playlist session.
+const playlistKeys = "N: next cave   C: caves"
+
 // Controls is the platform-neutral input for one update.
 type Controls struct {
 	Up, Down, Left, Right bool // held during this update
@@ -64,6 +67,7 @@ type Controls struct {
 	Restart               bool // pressed this update (edge-triggered)
 	Next                  bool // pressed this update (edge-triggered); handled by Playlist
 	Menu                  bool // pressed this update (edge-triggered); handled by Shell
+	Edit                  bool // pressed this update (edge-triggered); ends a playtest (Shell)
 }
 
 func (c Controls) held(d sim.Dir) bool {
@@ -110,6 +114,7 @@ type Session struct {
 	prompt             string
 	promptLeft         int
 	camera             Camera
+	navKeys            string // the overlay's navigation hints, after R/Esc
 
 	// Water levels are eased from waterFrom to the snapshot over
 	// ObjectSlideUpdates after each change; water is the Frame buffer.
@@ -134,7 +139,7 @@ func NewSession(l *level.Level, viewW, viewH int) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	gs := &Session{level: l, sim: s, camera: Camera{ViewW: float64(viewW), ViewH: float64(viewH)}}
+	gs := &Session{level: l, sim: s, camera: Camera{ViewW: float64(viewW), ViewH: float64(viewH)}, navKeys: playlistKeys}
 	gs.resetAttempt()
 	gs.resetPresentation()
 	switch crawlers, glimmers := l.Crawlers() > 0, l.Glimmers() > 0; {
@@ -426,6 +431,11 @@ func (s *Session) TakeCues() []sfx.Cue {
 // Notify shows a transient HUD prompt, for messages from the platform layer.
 func (s *Session) Notify(msg string) { s.setPrompt(msg) }
 
+// SetNavKeys replaces the navigation hints the pause, completion and death
+// overlays show ("N: next cave   C: caves"), for sessions that are not part
+// of a playlist, such as an editor playtest.
+func (s *Session) SetNavKeys(keys string) { s.navKeys = keys }
+
 // Snapshot returns the latest simulation snapshot.
 func (s *Session) Snapshot() sim.Snapshot { return s.snap }
 
@@ -518,7 +528,7 @@ func (s *Session) HUD() HUD {
 		h.Overlay = []string{
 			"CAVE COMPLETE",
 			fmt.Sprintf("%d %s in %s", s.snap.Collected, plural(s.snap.Collected, "crystal"), clock(s.snap.Tick)),
-			"R: play again   N: next cave   C: caves",
+			"R: play again   " + s.navKeys,
 		}
 	case s.snap.Status == sim.StatusDead && s.death == DeathCaught:
 		side := "left"
@@ -529,15 +539,15 @@ func (s *Session) HUD() HUD {
 		if s.walkedIntoCreature {
 			how = fmt.Sprintf("You walked into a %s", s.killer)
 		}
-		h.Overlay = []string{"CAUGHT", how, "R: try again   N: next cave   C: caves"}
+		h.Overlay = []string{"CAUGHT", how, "R: try again   " + s.navKeys}
 	case s.snap.Status == sim.StatusDead:
 		h.Overlay = []string{
 			"CRUSHED",
 			fmt.Sprintf("A falling %s landed on you", s.killer),
-			"R: try again   N: next cave   C: caves",
+			"R: try again   " + s.navKeys,
 		}
 	case s.paused:
-		h.Overlay = []string{"PAUSED", "Esc: resume   R: restart   N: next cave   C: caves"}
+		h.Overlay = []string{"PAUSED", "Esc: resume   R: restart   " + s.navKeys}
 	}
 	return h
 }

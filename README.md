@@ -8,9 +8,9 @@ browser, Electron, server or database.
 The game takes design inspiration from the *rules-driven* arcade cave games of the 1980s. All of its code,
 caves, art, names and rules are original to this project.
 
-> **Status: Phases 0–4 and Phase 5's creatures delivered in the cloud: a five-cave vertical slice plus
-> crawlers and glimmers, all still needing their Mac playtest.** Movement, digging, crystals, walls and a
-> quota-sealed exit, plus:
+> **Status: Phases 0–4, Phase 5's creatures and the first milestone of the cave editor delivered in the
+> cloud: a five-cave vertical slice, crawlers, glimmers and an editor, all still needing their Mac
+> playtest.** Movement, digging, crystals, walls and a quota-sealed exit, plus:
 >
 > - **gravity:** boulders and crystals fall, roll and crush, and boulders can be pushed;
 > - **water:** it falls and spreads, is conserved exactly, and is too deep to wade when a cell is full;
@@ -30,7 +30,8 @@ caves, art, names and rules are original to this project.
 > 5. "The Sluice" (water and gravity, two ways through).
 >
 > There's a title menu and a cave list, pause/restart, a HUD, sound effects, arcade music, a performance
-> overlay, and automatic replays of finished attempts. Progress is not saved between runs. See [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
+> overlay, and automatic replays of finished attempts. A **cave editor** paints, validates, saves and
+> playtests caves, and the caves you make appear in the cave list under "My caves". Progress is not saved between runs. See [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
 
 ## What has and has not been verified
 
@@ -45,14 +46,17 @@ caves, art, names and rules are original to this project.
 | Every cave can be completed; cave 05 has two distinct routes; cave 01 cannot hurt the player | Golden replays plus tests on each route's events and water state | Verified (Linux); CI runs them on macOS arm64 |
 | Menus: title, cave list, keys that chose an entry never leak into the game | `internal/game` shell tests; headless capture | Verified (Linux) |
 | Sound: thirteen original synthesised cues, one per kind of event per tick | `internal/sfx` tests; in a headless capture the app's audio streams matched the synthesised cues sample for sample (before the shatter cue was added) | Verified as data (Linux VM guest); **the shatter cue is checked by tests only; none yet heard on a Mac** |
-| Music: an original 32 s arcade loop; B turns it off and on, M mutes it with everything else, a paused cave holds it | `internal/sfx` tests (loop length, silent seam, peak below the cues), `internal/game` tests of the keys; in a headless capture the app's music stream matched the loop sample for sample, wrapped at 32 s, and B, M and Esc paused and resumed it | Verified as data (Linux VM guest); **not yet heard on a Mac** |
+| Music: an original 32 s arcade loop; B turns it off and on, M mutes it with everything else, a paused cave or playtest holds it | `internal/sfx` tests (loop length, silent seam, peak below the cues), `internal/game` tests of the keys; in a headless capture the app's music stream matched the loop sample for sample, wrapped at 32 s, and B, M and Esc paused and resumed it | Verified as data (Linux VM guest); **not yet heard on a Mac** |
 | A finished attempt is saved as a replay that reproduces it exactly | Session tests; app run headlessly (below) | Verified (Linux) |
 | Cave files validate; broken caves give useful errors | `internal/level` tests, `cavetool validate` | Verified |
+| Cave editor: painting, boxes, undo, resizing, settings, saving (never replacing a file without asking), the format version kept, embedded caves saved byte for byte | `internal/editor` tests (random-input invariants, mutation-checked), `cavetool fmt -check` in CI | Verified (Linux); CI runs them on macOS arm64 |
+| Editor playtests play the cave in a real session; P goes back and forth | `internal/game` shell tests (cave 01's golden replay completes a copy in a playtest); headless capture | Verified (Linux); **not yet used on a Mac** |
+| "My caves" in the cave list; caves that cannot be played say why; playtests of saved caves are recorded and re-run against the cave file | `internal/game` shell tests (mutation-checked); headless capture with `cavetool replay -cave` | Verified (Linux); **not yet used on a Mac** |
 | macOS arm64 / amd64 executables compile | Cross-compile from Linux; native build on CI's macOS runner | Compile-only |
 | `DeepShift.app` bundle builds and is ad-hoc signed | `scripts/build-macos-app.sh` on CI's macOS runner | Packaging checked in CI; **launch from Finder not yet verified** |
 | Window, keyboard, rendering, HUD on a real Mac | Owner ran `go run ./cmd/deepshift` on a Mac: "ok as a first pass" (Phase 1 build) | First pass only; **menus, sound, music, caves 01–05, boulders, water, crawlers and glimmers not yet played on a Mac** |
 | 60 FPS on a reference Apple Silicon Mac | The in-game performance overlay (`` ` `` or F3) measures it | **Not yet measured** |
-| Rendering + key handling of the real app on Linux (Xvfb, Mesa software GL) | Ebitengine `exp/vmhost` headless capture, run once by hand; Glimmer Hollow frames captured from the real session and renderer by a scratch program | Observed in the cloud sessions; not macOS, not in CI ([D-014](docs/DECISIONS.md#d-014-ebitengine-expvmhost-headless-capture-assessed-not-adopted)) |
+| Rendering + key and mouse handling of the real app on Linux (Xvfb, Mesa software GL), editor included | Ebitengine `exp/vmhost` headless capture, run by hand; Glimmer Hollow frames captured from the real session and renderer by a scratch program | Observed in the cloud sessions; not macOS, not in CI ([D-014](docs/DECISIONS.md#d-014-ebitengine-expvmhost-headless-capture-assessed-not-adopted)) |
 
 ## Play it on a Mac (from source)
 
@@ -176,12 +180,56 @@ The full rules are in [docs/PHYSICS.md](docs/PHYSICS.md).
 `go run ./cmd/cavetool replay <file>` to re-run one exactly. `-replay-dir <dir>` changes the folder, and
 `-replay-dir ""` turns saving off.
 
+### Make your own caves
+
+Choose **Cave editor** on the title menu. Start a new cave, open one of yours, or edit a copy of a built-in
+cave. To jump straight in, run `go run ./cmd/deepshift -edit new`. You can also pass `-edit` an embedded
+cave id (edited as a copy) or a cave file (saved back to it).
+
+| Input | Action |
+|---|---|
+| 1–9, 0, - | Choose a brush: wall, earth, floor, crystal, boulder, player start, exit, water, crawler, valve, gate. Press again for the next variant (shallower water, the crawler turned clockwise). Clicking a palette slot does the same. |
+| Left drag | Paint. The player start and the exit move rather than duplicate. A valve becomes the selected valve; gates join the selected valve. |
+| Right drag | Erase to floor |
+| Shift + drag | Fill a box |
+| Cmd + click | Flood-fill the area of matching cells (Cmd + right-click fills it with floor) |
+| Option (Alt) + click | Pick the brush of a cell; on a valve or gate, select its valve and the gate brush |
+| O | Open or close the valve or gate under the pointer, with all its linked gates: how the cave starts |
+| R | Reach overlay on/off: shades what the player cannot reach by walking and digging alone |
+| Arrows / WASD / wheel | Scroll |
+| Cmd+Z / Cmd+Shift+Z | Undo / redo |
+| Cmd+arrow / Cmd+Shift+arrow | Add / remove a column or row on that side |
+| Tab | Cave settings: title, id, seed and quota (Enter to change one, Esc to cancel) |
+| G | Grid on/off |
+| P | Playtest; P again comes back to the editor |
+| Cmd+S | Save |
+| Esc | Back to the list (it asks first if there are unsaved changes) |
+
+The editor checks the cave after every change, using the same loader as the game. Problems are listed in
+the bottom bar, and the cells they concern are outlined in red. A cave with problems can still be saved,
+but it cannot be playtested until they are fixed. New caves are saved as
+`~/Library/Application Support/Deep Shift/caves/<id>.json`; `-caves-dir <dir>` changes the folder. They
+appear in **Choose a cave** under "My caves", after the built-in caves; one that cannot be played yet is
+listed as "(cannot play)" and says why.
+
+**Sluices:** paint a valve (0), then its gates (-): each gate joins the selected valve, ringed in yellow,
+and a line links them. To add gates to another valve, Option-click it first. A valve with no gates, or a
+gate with no valve, is a problem until it is linked. O sets whether a sluice starts open.
+
+**Reach (R)** is a first look at a layout, not a solver: it follows walking and digging only. Falling and
+pushed boulders, turned valves and flowing water can make a cave easier or harder than it shows.
+
+A playtest of a saved, unchanged cave is saved as a replay like any finished attempt; a playtest of a cave
+with unsaved changes is not. Replays of your own caves name the cave file. Re-run one with
+`go run ./cmd/cavetool replay -cave <cave file> <replay>`.
+
 ## Develop and test (any OS, no display needed)
 
 ```sh
 go test ./...                     # all rules, level, replay and session tests; no window or GPU
 go vet ./...
 go run ./cmd/cavetool validate    # validate the embedded caves
+go run ./cmd/cavetool fmt -check assets/levels/*.json  # caves are in the canonical layout the editor writes
 go run ./cmd/cavetool show assets/levels/test_cave.json
 go run ./cmd/cavetool replay testdata/replays/*.json   # re-run golden replays and check their hashes
 go run ./cmd/cavetool replay -trace testdata/replays/cave_02_crushed.json   # events + grid per tick
@@ -202,15 +250,16 @@ Cross-compile the Mac binary from Linux as a compile check (this is not a Mac te
 
 ```text
 cmd/deepshift/        native desktop entrypoint (the only place Ebitengine starts)
-cmd/cavetool/         headless CLI: validate caves, print ASCII state, run/check replays
+cmd/cavetool/         headless CLI: validate and format caves, print ASCII state, run/check replays
 internal/sim/         pure-Go deterministic rules engine: no Ebitengine, GUI, OS, file or clock imports
-internal/level/       versioned cave file format, validation with located errors, checksum
+internal/level/       versioned cave file format, validation with located errors, checksum, canonical writer
 internal/replay/      tick-stamped replay format, runner, golden comparison
-internal/game/        pure-Go session and menus: tick scheduling, keyboard intent, pause/restart, camera, HUD text
+internal/game/        pure-Go session and menus: tick scheduling, keyboard intent, pause/restart, camera, HUD text, editor screens and playtests
+internal/editor/      pure-Go cave editor: brushes, strokes, undo, resizing, validation, saving, layout and view model
 internal/sprites/     original placeholder tiles drawn in code (pure Go, unit-tested)
 internal/sfx/         original sound cues and music synthesised in code, and which events trigger the cues (pure Go, tested)
 internal/perf/        rolling timing statistics for the performance overlay (pure Go, tested)
-internal/render/      Ebitengine drawing of game frames, menus and HUD
+internal/render/      Ebitengine drawing of game frames, menus, HUD and the cave editor
 internal/audio/       Ebitengine playback of the sound cues and the looping music
 assets/levels/        authored caves (embedded into the binary)
 testdata/replays/     golden replay fixtures with expected hashes and explanations

@@ -190,7 +190,8 @@ decisions are D-040 to D-044.
   ([D-044](DECISIONS.md#d-044-presenting-crawlers)); frames and audio checked in a headless capture
   (Linux/OpenGL only)
 - [x] Level selection UI: done in Phase 4 ([D-037](DECISIONS.md#d-037-menus))
-- [ ] Basic cave editor, structural supports, local preferences, one original visual theme: not started
+- [x] Basic cave editor, milestone 1: see the next section
+- [ ] Structural supports, local preferences, one original visual theme: not started
 - [ ] **Mac:** play Crawler Warren (checklist below)
 
 ### Mac playtest checklist for Crawler Warren
@@ -210,6 +211,124 @@ Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave cr
   enough to wade to the exit
 - [ ] Feel: is the crawler speed (one cell per 0.3 s) right? Can you read where a crawler will go next?
 
+## Phase 5 — The cave editor, milestone 1 (delivered in the cloud; Mac playtest pending)
+
+SPEC §8 "Level editor". The owner chose the editor next and asked for playtesting in the first milestone
+([D-045](DECISIONS.md#d-045-the-cave-editor-milestone-1-owner-decision)). The decisions are D-045 to D-049.
+No rule changes: rule version 4, cave format version 4, and every golden replay unchanged.
+
+- [x] Caves are written back in the canonical layout. Every embedded cave reads and writes byte for byte,
+  and CI checks it (`cavetool fmt -check`). Random caves round-trip
+  ([D-046](DECISIONS.md#d-046-canonical-cave-layout-cavetool-fmt-and-drafts)) (Cloud)
+- [x] The editor validates with the game's own loader after every change, and problems point at their
+  cells (Cloud)
+- [x] Paint terrain; place the player start, boulders, crystals, the exit, water and crawlers. The player
+  start and exit move rather than duplicate (Cloud)
+- [x] Strokes with no gaps, boxes, erasing, picking, undo/redo, resizing, and settings for title, id, seed
+  and quota. Random input keeps the editor's invariants, and undoing everything restores the cave exactly;
+  key behaviours are mutation-checked (Cloud)
+- [x] Save and reopen, including caves with problems. A file the editor did not open is never replaced
+  without asking twice. A cave keeps its format version
+  ([D-047](DECISIONS.md#d-047-a-cave-keeps-its-format-version)) (Cloud)
+- [x] Playtest with P and return with P. A playtest is a real session: cave 01's golden replay completes a
+  copy of it ([D-049](DECISIONS.md#d-049-playtests)) (Cloud)
+- [x] Title menu entry, edit list (new cave, your caves, copies of the built-in caves) and `-edit`. Drawn
+  in a headless capture (Linux/OpenGL only, [D-014 addendum](DECISIONS.md#d-014-addendum-cave-editor-headless-capture-2026-10-25))
+- [ ] **Mac:** use the editor (checklist below)
+
+### Mac playtest checklist for the cave editor
+
+Choose "Cave editor" on the title menu, or run `go run ./cmd/deepshift -edit new`.
+
+- [ ] The edit list shows New cave, then "Copy a built-in cave" with all seven caves; it scrolls; Esc goes
+  back to the title
+- [ ] New cave opens one screen of earth in a wall; the status bar reads "EDIT New cave 30x16 Quota 0 of 0
+  OK"
+- [ ] The cell under the pointer is outlined, with a faint preview of the brush; the bar names the cell
+- [ ] Left-drag paints with no gaps however fast you move; right-drag (or a two-finger click and drag on a
+  trackpad) erases to floor; Shift-drag fills a box; Option-click picks a cell's brush
+- [ ] Keys 1–9 choose brushes; pressing 8 again makes water shallower, and 9 again turns the crawler;
+  clicking a palette slot does the same
+- [ ] Painting a second player start or exit moves it
+- [ ] Cmd+Z and Cmd+Shift+Z undo and redo whole strokes; G toggles the grid
+- [ ] Arrows, WASD and the trackpad or wheel scroll a large cave (try a copy of the Proving Ground); the
+  scroll direction feels natural
+- [ ] Cmd+arrows grow the cave and Cmd+Shift+arrows shrink it, with nothing clashing with macOS
+- [ ] Tab opens the settings; typing a title, id, seed and quota works; F, M and B type letters there
+  rather than toggling fullscreen, sound or music
+- [ ] Covering the exit shows "1 problem" and the reason; P then refuses, saying what to fix
+- [ ] P playtests; "P: back to the editor" is on the pause, death and completion screens; P returns with
+  every edit intact
+- [ ] Cmd+S saves to `~/Library/Application Support/Deep Shift/caves/new_cave.json`; the list then shows
+  it under "Your caves"; reopening it shows no unsaved changes
+- [ ] A second new cave saved under the same id asks before replacing the first
+- [ ] Esc with unsaved changes asks first; Esc again leaves
+- [ ] `go run ./cmd/deepshift -edit assets/levels/cave_03_the_roll.json`, then Cmd+S without changes: `git
+  status` shows no change
+- [ ] Copy Crawler Warren: the valve's link to its gate is drawn; painting over the valve outlines the gate
+  in red
+
+## Phase 5 — The cave editor, milestone 2 (delivered in the cloud; Mac playtest pending)
+
+The decisions are D-050 and D-051. No rule changes: rule version 4, cave format version 4, and every golden
+replay unchanged.
+
+- [x] The cave list shows "My caves" from the editor's folder, read afresh each time. Playable caves join
+  the playlist after the built-in ones, and completing one marks it done
+  ([D-050](DECISIONS.md#d-050-my-caves-in-the-cave-list-editor-milestone-2)) (Cloud)
+- [x] Caves that cannot be played are listed, and say why: unreadable, problems, or an id that is taken.
+  Mutation-checked (Cloud)
+- [x] A playtest is recorded only when its cave is saved and unchanged. Replays of the player's caves name
+  the cave file, and re-run against it
+  ([D-051](DECISIONS.md#d-051-replays-of-playtests-and-of-the-players-caves)) (Cloud)
+- [x] Seen in a headless capture (Linux/OpenGL only,
+  [D-014 addendum](DECISIONS.md#d-014-addendum-editor-milestone-2-headless-capture-2026-10-25))
+- [ ] **Mac:** the checklist below
+
+### Mac playtest checklist for editor milestone 2
+
+- [ ] Save a new cave in the editor, then open "Choose a cave": it is under "My caves"
+- [ ] Choose it: it plays; N afterwards goes on through your caves and wraps to cave 01; finishing it marks
+  it "(done)"
+- [ ] Save a cave with a problem (cover the exit): it is listed "(cannot play)", and choosing it says what to
+  fix
+- [ ] Playtest a saved cave to the end: "Replay saved: …" appears. `go run ./cmd/cavetool replay -cave
+  <cave file> <replay>` reports "matches expect block"
+- [ ] Change the cave, playtest it to the end: "Playtest not recorded: save the cave first (Cmd+S)"
+
+## Phase 5 — The cave editor, milestone 3 (delivered in the cloud; Mac playtest pending)
+
+The decisions are D-052 to D-054. No rule changes: rule version 4, cave format version 4, and every golden
+replay unchanged.
+
+- [x] Valve (0) and gate (-) brushes. Gates join the selected valve and match its state; Alt-click selects a
+  valve; O opens or closes a mechanism. Mechanism invariants are checked under random input, and the key
+  rules are mutation-checked
+  ([D-052](DECISIONS.md#d-052-valves-gates-and-their-links-editor-milestone-3)) (Cloud)
+- [x] A sluice built in the editor works: its valve opens its gates in the simulation and in a playtest
+  (Cloud)
+- [x] The reach overlay (R), with a crystal and exit summary ([D-053](DECISIONS.md#d-053-the-reach-overlay))
+  (Cloud)
+- [x] Cmd-click flood fill ([D-054](DECISIONS.md#d-054-flood-fill-and-copy-and-paste-left-for-later))
+  (Cloud)
+- [x] Seen in a headless capture (Linux/OpenGL only,
+  [D-014 addendum](DECISIONS.md#d-014-addendum-editor-milestone-3-headless-capture-2026-10-25))
+- [ ] Copy and paste: follow-up F-27
+- [ ] **Mac:** the checklist below
+
+### Mac playtest checklist for editor milestone 3
+
+- [ ] 0 and - choose the valve and gate brushes; their palette slots read clearly
+- [ ] A painted valve is ringed in yellow; gates painted next are linked to it by lines; the problem about
+  a valve with no gates goes once the first gate is down
+- [ ] Option-click a valve or gate in a copy of Reservoir: its valve is ringed and new gates join it
+- [ ] A gate painted with no valve selected says to select one, and is outlined until linked
+- [ ] O over a valve or gate opens or closes all of them together; Cmd+Z undoes it
+- [ ] Playtest a sluice you built: Space at the valve opens its gates
+- [ ] R shades what cannot be reached by walking and digging; the bar's summary matches what you see
+- [ ] Cmd-click fills an area; Cmd-right-click fills it with floor; one Cmd+Z undoes the whole fill. Check
+  that Cmd-click is not taken by macOS
+
 ## Arcade music (owner request; delivered in the cloud, Mac playtest pending)
 
 The owner asked for arcade music that can be turned off and on, and chose the key, the default and the
@@ -221,7 +340,7 @@ pause behaviour ([D-055](DECISIONS.md#d-055-arcade-music-owner-decision)). No ru
   starts with it off. The rules and their notices are tested headlessly (Cloud)
 - [x] In a headless capture, the app's music stream matched the loop sample for sample and wrapped at 32 s;
   B, M and Esc stopped it and resumed it where it stopped (Linux/OpenGL only; D-014 addendum)
-- [x] The HUD hint and both menu footers name M and B, and fit their lines (Cloud)
+- [x] The HUD hint and the menu footers name M and B, and fit their lines (Cloud)
 - [ ] **Mac:** listen to it (checklist below)
 
 ### Mac playtest checklist for the music
@@ -241,8 +360,8 @@ Run `go run ./cmd/deepshift` with no flags.
 ## Phase 5 (continued) — glimmers, the shattering creature (delivered in the cloud; Mac playtest pending)
 
 The owner asked for the 1984 game's "rock on a butterfly makes diamonds" and chose the recommended design
-([D-045](DECISIONS.md#d-045-glimmers-and-shattering-rule-version-5-owner-decisions)). Rule version 5; the
-decisions are D-045 to D-048.
+([D-056](DECISIONS.md#d-056-glimmers-and-shattering-rule-version-5-owner-decisions)). Rule version 5; the
+decisions are D-056 to D-059.
 
 - [x] A second creature, the **glimmer**: the crawler's mirror image (right-hand rule), sharing its
   cadence, scan, catching and drowning. A falling object shatters it into resting crystals in every empty,
@@ -251,13 +370,13 @@ decisions are D-045 to D-048.
 - [x] The eleven earlier golden replays are unchanged except their hashes, shown by trace diffs against
   master (Cloud)
 - [x] Cave format version 5 writes glimmers as triangles; a quota may count on 9 crystals per glimmer
-  ([D-046](DECISIONS.md#d-046-cave-format-version-5)) (Cloud)
+  ([D-057](DECISIONS.md#d-057-cave-format-version-5)) (Cloud)
 - [x] An example cave, Glimmer Hollow, an extra: a ring patrol, a vault whose boulder always shatters its
   glimmer into five crystals, and a sluice that drowns the third. Completion and death replays, both in the
   100-run determinism check, and timing sweeps
-  ([D-047](DECISIONS.md#d-047-glimmer-hollow-the-example-cave)) (Cloud)
+  ([D-058](DECISIONS.md#d-058-glimmer-hollow-the-example-cave)) (Cloud)
 - [x] App: glimmer sprite by facing, gliding, prompts that count the crystals, CAUGHT naming the creature,
-  a shatter cue ([D-048](DECISIONS.md#d-048-presenting-glimmers)); frames checked in a headless capture
+  a shatter cue ([D-059](DECISIONS.md#d-059-presenting-glimmers)); frames checked in a headless capture
   (Linux/OpenGL only; the cue not yet heard)
 - [ ] **Mac:** play Glimmer Hollow (checklist below)
 
@@ -302,10 +421,17 @@ Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave gl
 | F-17 | Volume control beyond mute, with separate music and effects levels | SPEC §4 accessibility; M and B only toggle (D-038, D-055) |
 | F-18 | Reduce-motion option for the water easing and glides | SPEC §4 accessibility, with F-8 |
 | F-19 | Tune `CrawlerIntervalTicks` | Provisional (D-041); needs the Crawler Warren Mac playtest |
-| F-20 | Creatures in campaign caves, and more kinds (a fixed patrol) | The right-hand kind, the glimmer, is done (D-045); the example caves are the only ones with creatures, and SPEC §8's regions call for them |
+| F-20 | Creatures in campaign caves, and more kinds (a fixed patrol) | The right-hand kind, the glimmer, is done (D-056); the example caves are the only ones with creatures, and SPEC §8's regions call for them |
 | F-21 | An audible cue for a nearby crawler | Walking crawlers are silent (D-044), so a threat out of view cannot be heard; needs care not to become noise |
-| F-22 | Remaining Phase 5 items: cave editor, structural supports, local preferences, a visual theme | SPEC §11 Phase 5; not started (D-040) |
-| F-23 | Tune the shattering: how many crystals, and whether the falling object stops on them | Provisional (D-045); needs the Glimmer Hollow Mac playtest |
-| F-24 | Destructive explosions | SPEC §7 "Later". A faithful 3×3 blast that destroys terrain and harms the player was left out of D-045 because it needs damage rules first |
-| F-25 | A visual cue for crystals forming (a brief sparkle), with the reduced-effects option | Crystals simply appear when a glimmer shatters (D-048); the shatter cue carries the moment for now |
+| F-22 | Remaining Phase 5 items: structural supports, local preferences, a visual theme | SPEC §11 Phase 5; not started (D-040). The editor's first milestone is done (D-045) |
+| F-23 | ~~Editor milestone 2: your caves in the cave list ("My caves"); replays of playtests of saved, unchanged caves~~ | Done (D-050, D-051) |
+| F-24 | ~~Editor milestone 3: valve and gate brushes with linking; a "reachable from the start" overlay; flood fill~~ | Done (D-052 to D-054); copy and paste moved to F-27 |
+| F-25 | Editor: "save as" / rename, metadata editing, and a full, readable problem list | D-048: a cave keeps its first file name, and the bar shows only the first problems |
+| F-26 | Move the headless editor capture into `tools/vmcapture` (F-6) | The editor sessions were scripted by hand (D-014 addendum) |
+| F-27 | Editor: copy and paste a selection, keeping valve and gate links | D-054: needs a selection separate from the box fill, and rules for copied mechanisms |
+| F-28 | A solver-backed reach check that follows the real rules (falling, pushing, valves, water) | D-053: the overlay is walking and digging only |
 | F-29 | More music: a longer loop, or a tune per region or for the title | One 32 s loop (D-055) may wear in long caves; judge in the Mac playtest |
+| F-30 | Tune the shattering: how many crystals, and whether the falling object stops on them | Provisional (D-056); needs the Glimmer Hollow Mac playtest |
+| F-31 | Destructive explosions | SPEC §7 "Later". A faithful 3×3 blast that destroys terrain and harms the player was left out of D-056 because it needs damage rules first |
+| F-32 | A visual cue for crystals forming (a brief sparkle), with the reduced-effects option | Crystals simply appear when a glimmer shatters (D-059); the shatter cue carries the moment for now |
+| F-33 | Editor: a glimmer brush | The editor shows and saves glimmers but has no brush for them (every key 1–9, 0, - is taken; D-048), so glimmers are placed in the file for now |

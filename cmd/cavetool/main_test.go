@@ -103,3 +103,46 @@ func TestReplayTracePrintsCrawlers(t *testing.T) {
 		t.Fatalf("exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
 }
+
+func TestFmtChecksAndRewrites(t *testing.T) {
+	dir := t.TempDir()
+	messy := filepath.Join(dir, "messy.json")
+	// Valid content in a non-canonical layout: fields out of order, the grid
+	// on one line. fmt must keep the content and change only the layout.
+	src := `{"rows": ["#####", "#@*E#", "#####"], "id": "messy", "title": "Messy", "format_version": 1,
+	"width": 5, "height": 3, "seed": 7, "required_crystals": 1}`
+	if err := os.WriteFile(messy, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := runTool("fmt", "-check", messy)
+	if code != 1 || !strings.Contains(out, "not canonical: "+messy) {
+		t.Fatalf("fmt -check: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
+	}
+	if data, _ := os.ReadFile(messy); string(data) != src {
+		t.Fatal("fmt -check changed the file")
+	}
+	code, out, errOut = runTool("fmt", messy)
+	if code != 0 || !strings.Contains(out, "formatted "+messy) {
+		t.Fatalf("fmt: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
+	}
+	data, _ := os.ReadFile(messy)
+	if !strings.HasPrefix(string(data), "{\n  \"format_version\": 1,\n  \"id\": \"messy\",") || !strings.Contains(string(data), "\n    \"#@*E#\",\n") {
+		t.Fatalf("not rewritten canonically:\n%s", data)
+	}
+	if code, out, _ := runTool("fmt", "-check", messy); code != 0 || out != "" {
+		t.Fatalf("second check: exit %d, stdout %q", code, out)
+	}
+	if code, _, errOut := runTool("validate", messy); code != 0 {
+		t.Fatalf("formatted cave no longer validates: %s", errOut)
+	}
+}
+
+func TestFmtEmbeddedCavesAreCanonical(t *testing.T) {
+	caves, err := filepath.Glob("../../assets/levels/*.json")
+	if err != nil || len(caves) == 0 {
+		t.Fatalf("no caves: %v", err)
+	}
+	if code, out, errOut := runTool(append([]string{"fmt", "-check"}, caves...)...); code != 0 {
+		t.Fatalf("exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
+	}
+}

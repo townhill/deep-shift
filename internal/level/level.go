@@ -68,8 +68,8 @@ const crawlerFormatVersion = 4
 // glimmerFormatVersion is the first version with glimmers.
 const glimmerFormatVersion = 5
 
-// symbolVersion returns the first format version whose rows may contain r.
-func symbolVersion(r rune) int {
+// SymbolVersion returns the first format version whose rows may contain r.
+func SymbolVersion(r rune) int {
 	switch {
 	case sim.IsCrawlerSymbol(r):
 		return crawlerFormatVersion
@@ -89,13 +89,20 @@ func symbolVersion(r rune) int {
 // JSON implementation (including float64-based ones) round-trips exactly.
 const MaxSeed = 1<<53 - 1
 
+// Limits on a cave's id (in bytes) and title (in characters).
 const (
-	maxIDLen        = 64
-	maxTitleLen     = 80
-	maxListedPlaces = 5 // positions listed per problem before eliding
+	MaxIDLen    = 64
+	MaxTitleLen = 80
 )
 
+const maxListedPlaces = 5 // positions listed per problem before eliding
+
 var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_]*$`)
+
+// ValidID reports whether id is a valid cave id: 1 to MaxIDLen lowercase
+// letters, digits and '_', starting with a letter or digit. Valid ids are
+// also safe file names.
+func ValidID(id string) bool { return len(id) <= MaxIDLen && idPattern.MatchString(id) }
 
 // Level is a validated cave file.
 type Level struct {
@@ -160,10 +167,12 @@ func (l *Level) Checksum() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// Problem is one validation failure, located by JSON field path.
+// Problem is one validation failure, located by JSON field path and, where
+// it concerns particular cells, by their positions.
 type Problem struct {
 	Field string // e.g. "rows[3]" or "required_crystals"
 	Msg   string
+	At    []sim.Pos // the cells at fault, if any, for editors to point at
 }
 
 // ValidationError lists every problem found in a cave file.
@@ -217,6 +226,16 @@ var fields = []string{"format_version", "id", "title", "width", "height", "seed"
 // Parse decodes and validates a cave file. source names the file in error
 // messages. On validation failure the error is a *ValidationError.
 func Parse(source string, data []byte) (*Level, error) {
+	f, err := decode(source, data)
+	if err != nil {
+		return nil, err
+	}
+	return validate(source, f)
+}
+
+// decode checks a cave file's JSON shape: a single object of known fields
+// with the right types. It does not validate the content.
+func decode(source string, data []byte) (*file, error) {
 	// First pass: syntax, a single top-level object, and no unknown keys
 	// (checked by name rather than by matching encoding/json error text).
 	var raw map[string]json.RawMessage
@@ -246,7 +265,7 @@ func Parse(source string, data []byte) (*Level, error) {
 	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, decodeError(source, data, err)
 	}
-	return validate(source, &f)
+	return &f, nil
 }
 
 // Load reads and parses one cave file from fsys.
@@ -342,43 +361,41 @@ func lineCol(data []byte, offset int64) (line, col int) {
 
 func validate(source string, f *file) (*Level, error) {
 	v := &ValidationError{Source: source}
-	add := func(field, format string, args ...any) {
-		v.Problems = append(v.Problems, Problem{field, fmt.Sprintf(format, args...)})
-	}
+	r := &reporter{v}
 
 	// The version decides how everything else is read, so stop early.
 	switch {
 	case f.FormatVersion == nil:
-		add("format_version", "missing; this build reads format_version %d to %d", MinFormatVersion, FormatVersion)
+		r.add("format_version", "missing; this build reads format_version %d to %d", MinFormatVersion, FormatVersion)
 		return nil, v
 	case *f.FormatVersion < MinFormatVersion || *f.FormatVersion > FormatVersion:
-		add("format_version", "unsupported version %d; this build reads format_version %d to %d", *f.FormatVersion, MinFormatVersion, FormatVersion)
+		r.add("format_version", "unsupported version %d; this build reads format_version %d to %d", *f.FormatVersion, MinFormatVersion, FormatVersion)
 		return nil, v
 	}
 	l := &Level{FormatVersion: *f.FormatVersion, Rows: f.Rows, Metadata: f.Metadata}
 
 	switch {
 	case f.ID == nil:
-		add("id", "missing")
-	case len(*f.ID) > maxIDLen || !idPattern.MatchString(*f.ID):
-		add("id", "%q must be 1-%d characters of lowercase letters, digits and '_', starting with a letter or digit", *f.ID, maxIDLen)
+		r.add("id", "missing")
+	case !ValidID(*f.ID):
+		r.add("id", "%q must be 1-%d characters of lowercase letters, digits and '_', starting with a letter or digit", *f.ID, MaxIDLen)
 	default:
 		l.ID = *f.ID
 	}
 	switch {
 	case f.Title == nil || strings.TrimSpace(*f.Title) == "":
-		add("title", "missing or blank")
-	case utf8.RuneCountInString(*f.Title) > maxTitleLen:
-		add("title", "longer than %d characters", maxTitleLen)
+		r.add("title", "missing or blank")
+	case utf8.RuneCountInString(*f.Title) > MaxTitleLen:
+		r.add("title", "longer than %d characters", MaxTitleLen)
 	default:
 		l.Title = *f.Title
 	}
 	dimension := func(field string, p *int) int {
 		switch {
 		case p == nil:
-			add(field, "missing")
+			r.add(field, "missing")
 		case *p < 1 || *p > sim.MaxDimension:
-			add(field, "%d is out of range 1..%d", *p, sim.MaxDimension)
+			r.add(field, "%d is out of range 1..%d", *p, sim.MaxDimension)
 		default:
 			return *p
 		}
@@ -388,32 +405,32 @@ func validate(source string, f *file) (*Level, error) {
 	l.Height = dimension("height", f.Height)
 	switch {
 	case f.Seed == nil:
-		add("seed", "missing")
+		r.add("seed", "missing")
 	case *f.Seed > MaxSeed:
-		add("seed", "%d exceeds %d (2^53-1), the largest integer all JSON tools keep exact", *f.Seed, uint64(MaxSeed))
+		r.add("seed", "%d exceeds %d (2^53-1), the largest integer all JSON tools keep exact", *f.Seed, uint64(MaxSeed))
 	default:
 		l.Seed = *f.Seed
 	}
 	for k := range f.Metadata {
 		if strings.TrimSpace(k) == "" {
-			add("metadata", "keys must not be blank")
+			r.add("metadata", "keys must not be blank")
 			break
 		}
 	}
 
-	crystals, glimmers := validateRows(f.Rows, l, add)
-	validateMechanisms(f.Mechanisms, l, add)
+	crystals, glimmers := validateRows(f.Rows, l, r)
+	validateMechanisms(f.Mechanisms, l, r)
 
 	most := crystals + sim.ShatterCrystals*glimmers
 	switch {
 	case f.RequiredCrystals == nil:
-		add("required_crystals", "missing")
+		r.add("required_crystals", "missing")
 	case *f.RequiredCrystals < 0:
-		add("required_crystals", "%d is negative", *f.RequiredCrystals)
+		r.add("required_crystals", "%d is negative", *f.RequiredCrystals)
 	case crystals >= 0 && glimmers == 0 && *f.RequiredCrystals > crystals:
-		add("required_crystals", "%d exceeds the %d crystal(s) ('%c') in rows, so the exit could never open", *f.RequiredCrystals, crystals, sim.SymbolCrystal)
+		r.add("required_crystals", "%d exceeds the %d crystal(s) ('%c') in rows, so the exit could never open", *f.RequiredCrystals, crystals, sim.SymbolCrystal)
 	case crystals >= 0 && *f.RequiredCrystals > most:
-		add("required_crystals", "%d exceeds the %d crystal(s) the cave can yield (%d '%c' in rows, up to %d from each of %d glimmer(s)), so the exit could never open",
+		r.add("required_crystals", "%d exceeds the %d crystal(s) the cave can yield (%d '%c' in rows, up to %d from each of %d glimmer(s)), so the exit could never open",
 			*f.RequiredCrystals, most, crystals, sim.SymbolCrystal, sim.ShatterCrystals, glimmers)
 	default:
 		l.RequiredCrystals = *f.RequiredCrystals
@@ -426,7 +443,7 @@ func validate(source string, f *file) (*Level, error) {
 	l.cave.Mechanisms = l.Mechanisms
 	// Defence in depth: the simulation's own invariants must agree.
 	if err := l.cave.Validate(); err != nil {
-		add("rows", "rejected by the simulation: %v", err)
+		r.add("rows", "rejected by the simulation: %v", err)
 		return nil, v
 	}
 	return l, nil
@@ -435,13 +452,13 @@ func validate(source string, f *file) (*Level, error) {
 // validateRows checks the grid and fills l.cave. It returns the crystal and
 // glimmer counts, or a crystal count of -1 if the grid was unusable for
 // counting.
-func validateRows(rows []string, l *Level, add func(field, format string, args ...any)) (crystals, glimmers int) {
+func validateRows(rows []string, l *Level, r *reporter) (crystals, glimmers int) {
 	if rows == nil {
-		add("rows", "missing")
+		r.add("rows", "missing")
 		return -1, 0
 	}
 	if l.Height > 0 && len(rows) != l.Height {
-		add("rows", "has %d rows but height is %d", len(rows), l.Height)
+		r.add("rows", "has %d rows but height is %d", len(rows), l.Height)
 	}
 	if l.Width == 0 || l.Height == 0 || len(rows) != l.Height {
 		return -1, 0
@@ -453,29 +470,33 @@ func validateRows(rows []string, l *Level, add func(field, format string, args .
 	for y, row := range rows {
 		field := fmt.Sprintf("rows[%d]", y)
 		if n := utf8.RuneCountInString(row); n != l.Width {
-			add(field, "has %d symbols but width is %d", n, l.Width)
+			r.add(field, "has %d symbols but width is %d", n, l.Width)
 			gridOK = false
 			continue
 		}
 		var unknown, tooNew []string
+		var unknownAt, tooNewAt []sim.Pos
 		need := 0
 		x := 0
-		for _, r := range row {
-			cell, ok := sim.CellForSymbol(r)
+		for _, sym := range row {
+			p := sim.Pos{X: x, Y: y}
+			cell, ok := sim.CellForSymbol(sym)
 			if !ok {
-				unknown = append(unknown, fmt.Sprintf("%q at x=%d", r, x))
+				unknown = append(unknown, fmt.Sprintf("%q at x=%d", sym, x))
+				unknownAt = append(unknownAt, p)
 				gridOK = false
 			}
-			if v := symbolVersion(r); ok && v > l.FormatVersion {
-				tooNew = append(tooNew, fmt.Sprintf("%q at x=%d", r, x))
+			if v := SymbolVersion(sym); ok && v > l.FormatVersion {
+				tooNew = append(tooNew, fmt.Sprintf("%q at x=%d", sym, x))
+				tooNewAt = append(tooNewAt, p)
 				need = max(need, v)
 				gridOK = false
 			}
-			switch r {
+			switch sym {
 			case sim.SymbolPlayer:
-				players = append(players, sim.Pos{X: x, Y: y})
+				players = append(players, p)
 			case sim.SymbolExit:
-				exits = append(exits, sim.Pos{X: x, Y: y})
+				exits = append(exits, p)
 			case sim.SymbolCrystal:
 				crystals++
 			}
@@ -486,24 +507,24 @@ func validateRows(rows []string, l *Level, add func(field, format string, args .
 			x++
 		}
 		if len(unknown) > 0 {
-			add(field, "unknown tile symbol(s) %s; valid symbols are %s", elide(unknown), sim.SymbolLegend)
+			r.addAt(field, unknownAt, "unknown tile symbol(s) %s; valid symbols are %s", elide(unknown), sim.SymbolLegend)
 		}
 		if len(tooNew) > 0 {
-			add(field, "symbol(s) %s need format_version %d or later (this file is version %d)",
+			r.addAt(field, tooNewAt, "symbol(s) %s need format_version %d or later (this file is version %d)",
 				elide(tooNew), need, l.FormatVersion)
 		}
 	}
 	countCheck := func(name string, sym rune, found []sim.Pos) {
 		switch len(found) {
 		case 0:
-			add("rows", "no %s ('%c') found; exactly one is required", name, sym)
+			r.add("rows", "no %s ('%c') found; exactly one is required", name, sym)
 		case 1:
 		default:
 			places := make([]string, len(found))
 			for i, p := range found {
 				places[i] = p.String()
 			}
-			add("rows", "found %d %ss ('%c') at %s; exactly one is required", len(found), name, sym, elide(places))
+			r.addAt("rows", found, "found %d %ss ('%c') at %s; exactly one is required", len(found), name, sym, elide(places))
 		}
 	}
 	countCheck("player start", sim.SymbolPlayer, players)
@@ -516,17 +537,17 @@ func validateRows(rows []string, l *Level, add func(field, format string, args .
 
 // validateMechanisms decodes the mechanisms field and checks it against the
 // grid in l.cave (when the grid is usable), filling l.Mechanisms.
-func validateMechanisms(raw json.RawMessage, l *Level, add func(field, format string, args ...any)) {
+func validateMechanisms(raw json.RawMessage, l *Level, r *reporter) {
 	var files []mechanismFile
 	if raw != nil {
 		if l.FormatVersion < mechanismFormatVersion {
-			add("mechanisms", "needs format_version %d or later (this file is version %d)", mechanismFormatVersion, l.FormatVersion)
+			r.add("mechanisms", "needs format_version %d or later (this file is version %d)", mechanismFormatVersion, l.FormatVersion)
 			return
 		}
 		dec := json.NewDecoder(bytes.NewReader(raw))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&files); err != nil {
-			add("mechanisms", "must be a list of {\"valve\": {\"x\", \"y\"}, \"gates\": [{\"x\", \"y\"}, ...]}: %s",
+			r.add("mechanisms", "must be a list of {\"valve\": {\"x\", \"y\"}, \"gates\": [{\"x\", \"y\"}, ...]}: %s",
 				strings.TrimPrefix(err.Error(), "json: "))
 			return
 		}
@@ -539,20 +560,20 @@ func validateMechanisms(raw json.RawMessage, l *Level, add func(field, format st
 	pos := func(field string, pf *posFile, want func(sim.Terrain) bool, what string, symbols string) (sim.Pos, bool) {
 		switch {
 		case pf == nil:
-			add(field, "missing")
+			r.add(field, "missing")
 		case pf.X == nil || pf.Y == nil:
-			add(field, "needs both \"x\" and \"y\"")
+			r.add(field, "needs both \"x\" and \"y\"")
 		case *pf.X < 0 || *pf.Y < 0 || l.Width > 0 && *pf.X >= l.Width || l.Height > 0 && *pf.Y >= l.Height:
-			add(field, "(%d,%d) is outside the %dx%d cave", *pf.X, *pf.Y, l.Width, l.Height)
+			r.add(field, "(%d,%d) is outside the %dx%d cave", *pf.X, *pf.Y, l.Width, l.Height)
 		default:
 			p := sim.Pos{X: *pf.X, Y: *pf.Y}
 			if prev, dup := used[p]; dup {
-				add(field, "%s %s is already listed at %s", what, p, prev)
+				r.addAt(field, []sim.Pos{p}, "%s %s is already listed at %s", what, p, prev)
 				return p, false
 			}
 			used[p] = field
 			if grid && !want(cell(p)) {
-				add(field, "%s is %q in rows, not a %s (%s)", p, symbol(p), what, symbols)
+				r.addAt(field, []sim.Pos{p}, "%s is %q in rows, not a %s (%s)", p, symbol(p), what, symbols)
 				return p, false
 			}
 			return p, true
@@ -563,14 +584,18 @@ func validateMechanisms(raw json.RawMessage, l *Level, add func(field, format st
 		field := fmt.Sprintf("mechanisms[%d]", i)
 		valve, valveOK := pos(field+".valve", mf.Valve, sim.Terrain.Valve, "valve", "'V' or 'v'")
 		if len(mf.Gates) == 0 {
-			add(field+".gates", "missing or empty; a valve must operate at least one gate")
+			var at []sim.Pos
+			if valveOK {
+				at = []sim.Pos{valve}
+			}
+			r.addAt(field+".gates", at, "missing or empty; a valve must operate at least one gate")
 		}
 		m := sim.Mechanism{Valve: valve}
 		for j := range mf.Gates {
 			gf := fmt.Sprintf("%s.gates[%d]", field, j)
 			g, ok := pos(gf, &mf.Gates[j], sim.Terrain.Gate, "gate", "'G' or 'g'")
 			if ok && valveOK && (cell(g) == sim.TerrainGateOpen) != (cell(valve) == sim.TerrainValveOpen) {
-				add(gf, "gate %s is %q but valve %s is %q; a gate is open ('g') exactly when its valve is ('v')",
+				r.addAt(gf, []sim.Pos{g, valve}, "gate %s is %q but valve %s is %q; a gate is open ('g') exactly when its valve is ('v')",
 					g, symbol(g), valve, symbol(valve))
 			}
 			m.Gates = append(m.Gates, g)
@@ -581,15 +606,27 @@ func validateMechanisms(raw json.RawMessage, l *Level, add func(field, format st
 		return
 	}
 	var orphans []string
+	var orphansAt []sim.Pos
 	for i, c := range l.cave.Cells {
 		p := sim.Pos{X: i % l.Width, Y: i / l.Width}
 		if _, listed := used[p]; !listed && (c.Terrain.Valve() || c.Terrain.Gate()) {
 			orphans = append(orphans, fmt.Sprintf("%q at %s", sim.Symbol(c, false), p))
+			orphansAt = append(orphansAt, p)
 		}
 	}
 	if len(orphans) > 0 {
-		add("mechanisms", "every valve and gate must be listed in a mechanism; not listed: %s", elide(orphans))
+		r.addAt("mechanisms", orphansAt, "every valve and gate must be listed in a mechanism; not listed: %s", elide(orphans))
 	}
+}
+
+// reporter collects problems into a ValidationError.
+type reporter struct{ v *ValidationError }
+
+func (r *reporter) add(field, format string, args ...any) { r.addAt(field, nil, format, args...) }
+
+// addAt records a problem with the cells it concerns.
+func (r *reporter) addAt(field string, at []sim.Pos, format string, args ...any) {
+	r.v.Problems = append(r.v.Problems, Problem{field, fmt.Sprintf(format, args...), at})
 }
 
 func elide(items []string) string {
