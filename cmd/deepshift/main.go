@@ -291,17 +291,18 @@ func readControls() game.Controls {
 	}
 }
 
-// brushKeys choose the editor's palette brushes, in order.
+// brushKeys choose the editor's palette brushes, in order (editor.Palette's
+// Key labels).
 var brushKeys = [...]ebiten.Key{
 	ebiten.KeyDigit1, ebiten.KeyDigit2, ebiten.KeyDigit3, ebiten.KeyDigit4, ebiten.KeyDigit5,
-	ebiten.KeyDigit6, ebiten.KeyDigit7, ebiten.KeyDigit8, ebiten.KeyDigit9,
+	ebiten.KeyDigit6, ebiten.KeyDigit7, ebiten.KeyDigit8, ebiten.KeyDigit9, ebiten.KeyDigit0, ebiten.KeyMinus,
 }
 
 // readEditorInput samples the mouse and keyboard for the cave editor. Cmd or
-// Control (for non-Mac keyboards) turns Z, S and the arrows into commands;
-// without them the arrows and WASD scroll and letters are shortcuts. The
-// mouse position is in logical screen pixels, the editor layout's
-// coordinates.
+// Control (for non-Mac keyboards) turns Z, S and the arrows into commands
+// and a click into a flood fill; without them the arrows and WASD scroll and
+// letters are shortcuts. The mouse position is in logical screen pixels, the
+// editor layout's coordinates.
 func readEditorInput() editor.Input {
 	pressed := inpututil.IsKeyJustPressed
 	held := func(keys ...ebiten.Key) bool {
@@ -320,7 +321,7 @@ func readEditorInput() editor.Input {
 		MouseX: mx, MouseY: my,
 		Paint: ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft),
 		Erase: ebiten.IsMouseButtonPressed(ebiten.MouseButtonRight),
-		Shift: shift, Alt: held(ebiten.KeyAlt),
+		Shift: shift, Alt: held(ebiten.KeyAlt), Cmd: cmd,
 		WheelX: wx, WheelY: wy,
 		Settings:  pressed(ebiten.KeyTab),
 		Back:      pressed(ebiten.KeyEscape),
@@ -351,6 +352,8 @@ func readEditorInput() editor.Input {
 	in.Right = held(ebiten.KeyArrowRight, ebiten.KeyD)
 	in.Playtest = pressed(ebiten.KeyP)
 	in.Grid = pressed(ebiten.KeyG)
+	in.Toggle = pressed(ebiten.KeyO)
+	in.Reach = pressed(ebiten.KeyR)
 	for i, k := range brushKeys {
 		if pressed(k) {
 			in.Brush = i + 1

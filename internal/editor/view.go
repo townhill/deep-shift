@@ -2,7 +2,6 @@ package editor
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/townhill/deep-shift/internal/level"
 	"github.com/townhill/deep-shift/internal/sim"
@@ -26,6 +25,9 @@ type View struct {
 	BoxOK            bool
 	Problems         []sim.Pos // cells named by validation problems
 	Mechanisms       []sim.Mechanism
+	Linking          sim.Pos // the selected valve, which painted gates join, when LinkingOK
+	LinkingOK        bool
+	Reach            []bool // the reachability overlay: cells the player can reach; nil when off
 	Palette          []Slot
 	Status, Hint     string   // the top bar's two lines
 	Info             []string // the bottom bar's lines, right of the palette
@@ -78,7 +80,16 @@ func (e *Editor) View() View {
 	}
 	for i, b := range Palette {
 		c, _ := sim.CellForSymbol(b.Variants[e.variant[i]])
-		v.Palette = append(v.Palette, Slot{Cell: c, Key: strconv.Itoa(i + 1), Selected: i == e.brush})
+		v.Palette = append(v.Palette, Slot{Cell: c, Key: b.Key, Selected: i == e.brush})
+	}
+	if p := e.selectedValve(); e.doc.mechanismOf(p) >= 0 {
+		v.Linking, v.LinkingOK = p, true
+	}
+	if e.reachOn {
+		v.Reach = e.reach.cells
+		if v.Reach == nil { // no player start: nothing is reachable
+			v.Reach = make([]bool, len(e.cells))
+		}
 	}
 	v.Status, v.Hint, v.Info = e.status(), e.hint(), e.info()
 	if e.settings.open {
@@ -120,7 +131,14 @@ func (e *Editor) hint() string {
 	if e.settings.open {
 		return "Cave settings"
 	}
-	return fmt.Sprintf("Brush %d: %s   P: playtest   Tab: settings   Cmd+S: save", e.brush+1, symbolName(e.symbol()))
+	brush := fmt.Sprintf("Brush %s: %s", Palette[e.brush].Key, symbolName(e.symbol()))
+	if e.brush == gateBrush {
+		if v := e.selectedValve(); e.doc.mechanismOf(v) >= 0 {
+			return fmt.Sprintf("%s, joining valve %s   P: playtest   O: open/shut", brush, v)
+		}
+		return brush + " (no valve selected: paint one, or Alt-click one)"
+	}
+	return brush + "   P: playtest   Tab: settings   Cmd+S: save"
 }
 
 // info is the bottom bar's text: the cell under the mouse or the file, then
@@ -134,11 +152,14 @@ func (e *Editor) info() []string {
 		first = fmt.Sprintf("%s %s", e.hover, symbolName(e.doc.at(e.hover)))
 	}
 	lines := []string{first}
+	if e.reachOn {
+		lines = append(lines, e.reachSummary())
+	}
 	switch n := len(e.problems); {
 	case n == 0:
 		lines = append(lines,
-			"No problems: P plays the cave. Left: paint, Right: erase, Shift-drag: box, Alt-click: pick",
-			"Arrows/wheel: scroll  Cmd+Z: undo  Cmd+Shift+Z: redo  G: grid  Cmd(+Shift)+arrows: resize")
+			"No problems: P plays it. Shift-drag: box, Cmd-click: fill, Alt-click: pick/select",
+			"Cmd+Z: undo  G: grid  R: reach  O: open/shut a sluice  Cmd(+Shift)+arrows: resize")
 	default:
 		describe := func(p level.Problem) string { return p.Field + ": " + p.Msg }
 		lines = append(lines, describe(e.problems[0]))
@@ -148,7 +169,20 @@ func (e *Editor) info() []string {
 			lines = append(lines, fmt.Sprintf("...and %d more problems; the cells concerned are outlined in red", n-1))
 		}
 	}
-	return lines
+	return lines[:min(len(lines), 3)]
+}
+
+// reachSummary describes the reachability overlay.
+func (e *Editor) reachSummary() string {
+	if e.reach.cells == nil {
+		return "Reach: there is no player start to search from"
+	}
+	exit := "not the exit"
+	if e.reach.exit {
+		exit = "the exit"
+	}
+	return fmt.Sprintf("Reach (walking and digging, nothing moving): %d of %d crystals (quota %d), %s",
+		e.reach.crystals, e.crystals(), e.doc.quota, exit)
 }
 
 func (e *Editor) settingsLines() []Line {

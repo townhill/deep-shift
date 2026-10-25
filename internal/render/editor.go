@@ -31,6 +31,8 @@ var (
 	boxColour     = color.NRGBA{60, 200, 210, 255}
 	boxFillColour = color.NRGBA{60, 200, 210, 50}
 	linkColour    = color.NRGBA{235, 190, 60, 170}
+	selectColour  = color.NRGBA{255, 215, 80, 255}
+	shadeColour   = color.NRGBA{0, 0, 0, 150}
 	unknownColour = color.NRGBA{200, 40, 200, 255}
 	panelColour   = color.NRGBA{12, 14, 20, 235}
 )
@@ -39,8 +41,9 @@ var (
 const ghostAlpha = 0.55
 
 // DrawEditor renders the cave editor: the status bar, the cave with its
-// grid, problem outlines, mechanism links and brush preview, the palette
-// bar, and the settings panel when it is open.
+// grid, the reachability overlay, problem outlines, mechanism links with the
+// selected valve ringed, the brush preview, the palette bar, and the
+// settings panel when it is open.
 func (r *Renderer) DrawEditor(screen *ebiten.Image, v editor.View) {
 	screen.Fill(backgroundColour)
 	r.drawEditorWorld(v)
@@ -80,6 +83,19 @@ func (r *Renderer) drawEditorWorld(v editor.View) {
 			r.drawCell(r.world, v.Cells[i], left, top, 1, surface)
 		}
 	}
+	if v.Reach != nil {
+		// The overlay shades the cells the player cannot reach. Walls are
+		// left alone: they are never reachable, and shading them would hide
+		// the unreachable floor and earth that matter.
+		for y := max(y0, 0); y <= y1; y++ {
+			for x := max(x0, 0); x <= x1; x++ {
+				if i := y*v.Width + x; !v.Reach[i] && v.Cells[i].Terrain != sim.TerrainWall {
+					left, top := cellPos(x, y)
+					r.fillRectF(r.world, left, top, TileSize, TileSize, shadeColour)
+				}
+			}
+		}
+	}
 	if v.Grid {
 		l, t := cellPos(0, 0)
 		w, h := float64(v.Width*TileSize), float64(v.Height*TileSize)
@@ -95,11 +111,19 @@ func (r *Renderer) drawEditorWorld(v editor.View) {
 		return float32(left + TileSize/2), float32(top + TileSize/2)
 	}
 	for _, m := range v.Mechanisms {
+		width, c := float32(2), color.Color(linkColour)
+		if v.LinkingOK && m.Valve == v.Linking {
+			width, c = 3, selectColour
+		}
 		vx, vy := centre(m.Valve)
 		for _, g := range m.Gates {
 			gx, gy := centre(g)
-			vector.StrokeLine(r.world, vx, vy, gx, gy, 2, linkColour, true)
+			vector.StrokeLine(r.world, vx, vy, gx, gy, width, c, true)
 		}
+	}
+	if v.LinkingOK {
+		left, top := cellPos(v.Linking.X, v.Linking.Y)
+		vector.StrokeRect(r.world, float32(left)-2, float32(top)-2, TileSize+4, TileSize+4, 3, selectColour, false)
 	}
 	for _, p := range v.Problems {
 		left, top := cellPos(p.X, p.Y)

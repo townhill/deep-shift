@@ -28,7 +28,7 @@ const (
 type Input struct {
 	MouseX, MouseY        int
 	Paint, Erase          bool    // left and right mouse buttons, held
-	Shift, Alt            bool    // held: Shift-drag fills a box, Alt-click picks a brush
+	Shift, Alt, Cmd       bool    // held: Shift-drag fills a box, Alt-click picks, Cmd-click flood-fills
 	WheelX, WheelY        float64 // scrolled this update, in wheel steps
 	Up, Down, Left, Right bool    // arrow keys or WASD held (without Cmd)
 
@@ -38,6 +38,8 @@ type Input struct {
 	Save         bool    // Cmd+S
 	Playtest     bool    // P
 	Grid         bool    // G
+	Toggle       bool    // O: open or close the mechanism under the mouse
+	Reach        bool    // R: the reachability overlay
 	Settings     bool    // Tab: the cave settings panel
 	Back         bool    // Esc
 	Enter        bool    // confirms a settings field
@@ -55,7 +57,7 @@ func (in Input) busy() bool {
 // previous update's input.
 func (in Input) pressed(prev Input) bool {
 	return in.Paint && !prev.Paint || in.Erase && !prev.Erase || in.Brush != 0 || in.Undo || in.Redo ||
-		in.Save || in.Playtest || in.Grid || in.Settings || in.Back || in.Enter || in.Backspace ||
+		in.Save || in.Playtest || in.Grid || in.Toggle || in.Reach || in.Settings || in.Back || in.Enter || in.Backspace ||
 		in.Grow != sim.DirNone || in.Shrink != sim.DirNone || len(in.Chars) > 0
 }
 
@@ -81,6 +83,7 @@ type Editor struct {
 	problems []level.Problem
 	cells    []sim.Cell
 	unknown  []bool
+	reach    reach
 
 	undo, redo []doc
 
@@ -92,6 +95,9 @@ type Editor struct {
 	hoverOK     bool // hover is a cave cell under the mouse
 	stroke      *stroke
 	grid        bool
+	reachOn     bool    // show the reachability overlay
+	linking     sim.Pos // the selected valve: gates painted now join its mechanism
+	linkingOK   bool
 	settings    settings
 	confirm     confirm
 	notice      string
@@ -103,13 +109,14 @@ type Editor struct {
 // stroke is a mouse gesture in progress: painting along the pointer's path,
 // or (with Shift) dragging out a box that is filled on release.
 type stroke struct {
-	erase   bool // right button
-	symbol  rune
-	box     bool
-	anchor  sim.Pos // the box's first corner, in the cave
-	last    sim.Pos // the pointer's cell at the previous update
-	before  doc     // the cave before the stroke, for undo and cancel
-	changed bool
+	erase    bool // right button
+	symbol   rune
+	box      bool
+	anchor   sim.Pos // the box's first corner, in the cave
+	last     sim.Pos // the pointer's cell at the previous update
+	before   doc     // the cave before the stroke, for undo and cancel
+	changed  bool
+	unlinked bool // a gate was painted with no valve to join
 }
 
 // confirm is a question awaiting a second press of the same key.
@@ -242,6 +249,10 @@ func (e *Editor) updateEditing(in, prev Input) Request {
 		e.step(&e.redo, &e.undo, "Nothing to redo")
 	case in.Grid:
 		e.grid = !e.grid
+	case in.Reach:
+		e.reachOn = !e.reachOn
+	case in.Toggle:
+		e.toggle()
 	case in.Settings:
 		e.settings = settings{open: true}
 	case in.Brush > 0 && in.Brush <= len(Palette):
@@ -333,10 +344,30 @@ func (e *Editor) press(in Input, inView bool, cell sim.Pos, erase bool) {
 	if erase {
 		s.symbol = eraser
 	}
+	if in.Cmd {
+		e.fill(s, cell)
+		return
+	}
 	e.stroke = s
 	if !s.box {
 		e.paintLine(s, cell, cell)
 	}
+}
+
+// fill flood-fills the region of cells around p that hold the same symbol as
+// p with the stroke's symbol, as one undo step.
+func (e *Editor) fill(s *stroke, p sim.Pos) {
+	if !e.doc.inBounds(p) {
+		return
+	}
+	if oneOnly(s.symbol) {
+		e.paintCell(s, p)
+	} else {
+		for _, q := range e.doc.region(p) {
+			e.paintCell(s, q)
+		}
+	}
+	e.finish(s)
 }
 
 func (e *Editor) continueStroke(in Input, inView bool, cell sim.Pos) {
@@ -350,9 +381,7 @@ func (e *Editor) continueStroke(in Input, inView bool, cell sim.Pos) {
 		if s.box {
 			e.fillBox(s, s.anchor, e.clamp(s.last))
 		}
-		if s.changed {
-			e.commit(s.before)
-		}
+		e.finish(s)
 		return
 	case !inView:
 		return
@@ -371,18 +400,54 @@ func (e *Editor) paintLine(s *stroke, a, b sim.Pos) {
 	}
 }
 
-// paintCell paints the stroke's symbol at p, noting any change on s.
+// paintCell paints the stroke's symbol at p, noting any change on s. A
+// valve gets a mechanism of its own and becomes the selected valve; a gate
+// joins the selected valve's mechanism.
 func (e *Editor) paintCell(s *stroke, p sim.Pos) {
-	if e.doc.paint(p, s.symbol) {
+	var changed bool
+	switch s.symbol {
+	case sim.SymbolValveShut:
+		changed = e.doc.placeValve(p)
+		if e.doc.mechanismOf(p) >= 0 {
+			e.linking, e.linkingOK = p, true
+		}
+	case sim.SymbolGateClosed:
+		v := e.selectedValve()
+		changed = e.doc.placeGate(p, v)
+		if changed && e.doc.mechanismOf(v) < 0 {
+			s.unlinked = true
+		}
+	default:
+		changed = e.doc.paint(p, s.symbol)
+	}
+	if changed {
 		s.changed, e.stale = true, true
 	}
 }
 
-// fillBox fills the box from a to b. A box of player starts or exits would
-// only keep its last cell, so those brushes place one at b, the corner
-// where the drag ended.
+// selectedValve returns the valve gates are linked to, or a position no
+// mechanism has when none is selected or it has since been removed.
+func (e *Editor) selectedValve() sim.Pos {
+	if e.linkingOK && e.doc.mechanismOf(e.linking) >= 0 {
+		return e.linking
+	}
+	return sim.Pos{X: -1, Y: -1}
+}
+
+// finish records a finished stroke or fill for undo.
+func (e *Editor) finish(s *stroke) {
+	if s.changed {
+		e.commit(s.before)
+	}
+	if s.unlinked {
+		e.setNotice("A gate needs a valve: paint a valve first, or Alt-click one, then paint its gates")
+	}
+}
+
+// fillBox fills the box from a to b. A box of player starts, exits or
+// valves places one, at b, the corner where the drag ended (oneOnly).
 func (e *Editor) fillBox(s *stroke, a, b sim.Pos) {
-	if single(s.symbol) {
+	if oneOnly(s.symbol) {
 		e.paintCell(s, b)
 		return
 	}
@@ -468,12 +533,25 @@ func (e *Editor) choose(i int) {
 	e.brush = i
 }
 
-// pick selects the brush that paints the cell at p.
+// pick selects the brush that paints the cell at p. On a valve or gate it
+// selects that mechanism's valve, and the gate brush, so the next gates
+// painted join it.
 func (e *Editor) pick(p sim.Pos) {
 	if !e.doc.inBounds(p) {
 		return
 	}
 	r := e.doc.at(p)
+	if mechanical(r) {
+		m := e.doc.owner(p)
+		if m < 0 {
+			e.setNotice(fmt.Sprintf("This %s belongs to no valve: paint over it, or select a valve and paint it again", symbolName(r)))
+			return
+		}
+		v := e.doc.mechanisms[m].Valve
+		e.linking, e.linkingOK, e.brush = v, true, gateBrush
+		e.setNotice(fmt.Sprintf("Valve %s selected: gates you paint now open and close with it", v))
+		return
+	}
 	b, v, ok := brushFor(r)
 	if !ok {
 		e.setNotice(fmt.Sprintf("No brush paints %s yet", symbolName(r)))
@@ -484,6 +562,26 @@ func (e *Editor) pick(p sim.Pos) {
 
 // symbol is the current brush's symbol.
 func (e *Editor) symbol() rune { return Palette[e.brush].Variants[e.variant[e.brush]] }
+
+// toggle opens or closes the mechanism of the valve or gate under the mouse,
+// setting how the cave starts.
+func (e *Editor) toggle() {
+	if !e.hoverOK {
+		return
+	}
+	before := e.doc.clone()
+	if !e.doc.toggle(e.hover) {
+		e.setNotice("O opens or closes a valve and its gates: point at one of them")
+		return
+	}
+	e.commit(before)
+	m := e.doc.mechanisms[e.doc.owner(e.hover)]
+	state := "shut: its gates start closed"
+	if e.doc.at(m.Valve) == sim.SymbolValveOpen {
+		state = "open: its gates start open"
+	}
+	e.setNotice(fmt.Sprintf("Valve %s now starts %s", m.Valve, state))
+}
 
 func (e *Editor) resize(side sim.Dir, grow bool) {
 	before := e.doc.clone()
@@ -569,8 +667,8 @@ func (e *Editor) save() {
 }
 
 // refresh re-derives everything that depends on the cave: its encoding,
-// validation through level.Parse (the game's own check), and the cells the
-// renderer draws.
+// validation through level.Parse (the game's own check), the cells the
+// renderer draws, and where the player can reach.
 func (e *Editor) refresh() {
 	e.stale = false
 	e.encoded = e.doc.draft().Encode()
@@ -597,6 +695,7 @@ func (e *Editor) refresh() {
 			e.cells = append(e.cells, c)
 		}
 	}
+	e.reach = reachable(e.cells, e.unknown, w)
 }
 
 func (e *Editor) sourceName() string {

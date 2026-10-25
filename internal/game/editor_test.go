@@ -236,3 +236,37 @@ func TestOpenEditorDirectlyAndLeave(t *testing.T) {
 		t.Fatal("ragged rows should not open")
 	}
 }
+
+// A sluice built in the editor works in a playtest: Space at the valve
+// opens its gate.
+func TestPlaytestEditorBuiltSluice(t *testing.T) {
+	sh, _ := newEditorShell(t)
+	if err := sh.OpenEditor(editor.NewCave(), ""); err != nil {
+		t.Fatal(err)
+	}
+	sh.UpdateEditor(editor.Input{})
+	cell := func(x, y int) (int, int) { return x*32 + 16, 64 + y*32 + 16 }
+	editorTap(sh, editor.Input{Brush: 10}) // valve, beside the player start at (1,1)
+	x, y := cell(2, 1)
+	editorTap(sh, editor.Input{MouseX: x, MouseY: y, Paint: true})
+	editorTap(sh, editor.Input{Brush: 11}) // gate
+	x, y = cell(6, 5)
+	editorTap(sh, editor.Input{MouseX: x, MouseY: y, Paint: true})
+	if p := sh.Editor().Problems(); len(p) != 0 {
+		t.Fatalf("problems: %v", p)
+	}
+	editorTap(sh, editor.Input{Playtest: true})
+	if sh.Screen() != ScreenPlaytest {
+		t.Fatalf("screen %d", sh.Screen())
+	}
+	press(sh, Controls{})
+	if got := sh.Session().HUD().Prompt; got != "Playtest: P returns to the editor" {
+		t.Fatalf("prompt %q", got)
+	}
+	for range 2 * UpdatesPerTick {
+		sh.Update(Controls{Interact: true})
+	}
+	if c := sh.Session().Snapshot().Cell(sim.Pos{X: 6, Y: 5}); c.Terrain != sim.TerrainGateOpen {
+		t.Fatalf("the gate is %v after turning the valve", c.Terrain)
+	}
+}

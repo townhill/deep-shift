@@ -317,14 +317,6 @@ func TestBrushKeysPaletteAndPick(t *testing.T) {
 	}
 }
 
-func TestPickRefusesValvesAndGates(t *testing.T) {
-	e, _ := open(t, embedded(t, "cave_04").Draft(), "")
-	drag(e, false, Input{Alt: true}, pos(12, 6))
-	if !strings.Contains(e.View().Hint, "No brush paints shut valve yet") {
-		t.Fatalf("hint %q", e.View().Hint)
-	}
-}
-
 func TestPaintingOverMechanismsUnlinksThem(t *testing.T) {
 	e, _ := open(t, embedded(t, "cave_04").Draft(), "")
 	// cave_04: valve (12,6), gates (13,11) and (14,11).
@@ -796,9 +788,10 @@ func randomInput(rng *rand.Rand) Input {
 	in := Input{
 		MouseX: rng.IntN(testLayout.Width+64) - 32, MouseY: rng.IntN(testLayout.Height+64) - 32,
 		Paint: rng.IntN(3) == 0, Erase: rng.IntN(8) == 0, Shift: rng.IntN(4) == 0, Alt: rng.IntN(10) == 0,
+		Cmd:  rng.IntN(12) == 0,
 		Left: rng.IntN(10) == 0, Right: rng.IntN(10) == 0, Up: rng.IntN(10) == 0, Down: rng.IntN(10) == 0,
 	}
-	switch rng.IntN(40) {
+	switch rng.IntN(44) {
 	case 0:
 		in.Brush = 1 + rng.IntN(len(Palette))
 	case 1:
@@ -819,8 +812,22 @@ func randomInput(rng *rand.Rand) Input {
 		in.Back = true
 	case 9:
 		in.WheelX, in.WheelY = rng.Float64()*4-2, rng.Float64()*4-2
+	case 10, 11:
+		in.Toggle = true
+	case 12:
+		in.Reach = true
+	case 13: // the valve and gate brushes, more often than chance
+		in.Brush = len(Palette) - rng.IntN(2)
 	}
 	return in
+}
+
+// at is the symbol at p, or 0 outside the cave.
+func at(d *doc, p sim.Pos) rune {
+	if !d.inBounds(p) {
+		return 0
+	}
+	return d.at(p)
 }
 
 func checkInvariants(e *Editor) error {
@@ -840,13 +847,21 @@ func checkInvariants(e *Editor) error {
 	if n := occurrences(e, 'E'); n > 1 {
 		return fmt.Errorf("%d exits", n)
 	}
+	linked := map[sim.Pos]bool{}
 	for _, m := range d.mechanisms {
-		if !d.inBounds(m.Valve) || !mechanical(d.at(m.Valve)) {
-			return fmt.Errorf("mechanism valve %s is not a valve", m.Valve)
+		valve, _ := sim.CellForSymbol(at(d, m.Valve))
+		if !valve.Terrain.Valve() || linked[m.Valve] {
+			return fmt.Errorf("mechanism valve %s is %q or already linked", m.Valve, at(d, m.Valve))
 		}
+		linked[m.Valve] = true
 		for _, g := range m.Gates {
-			if !d.inBounds(g) || !mechanical(d.at(g)) {
-				return fmt.Errorf("mechanism gate %s is not a gate", g)
+			gate, _ := sim.CellForSymbol(at(d, g))
+			if !gate.Terrain.Gate() || linked[g] {
+				return fmt.Errorf("mechanism gate %s is %q or already linked", g, at(d, g))
+			}
+			linked[g] = true
+			if (gate.Terrain == sim.TerrainGateOpen) != (valve.Terrain == sim.TerrainValveOpen) {
+				return fmt.Errorf("gate %s is %q but its valve %s is %q", g, at(d, g), m.Valve, at(d, m.Valve))
 			}
 		}
 	}

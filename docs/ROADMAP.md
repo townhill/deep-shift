@@ -296,6 +296,39 @@ replay unchanged.
   <cave file> <replay>` reports "matches expect block"
 - [ ] Change the cave, playtest it to the end: "Playtest not recorded: save the cave first (Cmd+S)"
 
+## Phase 5 — The cave editor, milestone 3 (delivered in the cloud; Mac playtest pending)
+
+The decisions are D-052 to D-054. No rule changes: rule version 4, cave format version 4, and every golden
+replay unchanged.
+
+- [x] Valve (0) and gate (-) brushes. Gates join the selected valve and match its state; Alt-click selects a
+  valve; O opens or closes a mechanism. Mechanism invariants are checked under random input, and the key
+  rules are mutation-checked
+  ([D-052](DECISIONS.md#d-052-valves-gates-and-their-links-editor-milestone-3)) (Cloud)
+- [x] A sluice built in the editor works: its valve opens its gates in the simulation and in a playtest
+  (Cloud)
+- [x] The reach overlay (R), with a crystal and exit summary ([D-053](DECISIONS.md#d-053-the-reach-overlay))
+  (Cloud)
+- [x] Cmd-click flood fill ([D-054](DECISIONS.md#d-054-flood-fill-and-copy-and-paste-left-for-later))
+  (Cloud)
+- [x] Seen in a headless capture (Linux/OpenGL only,
+  [D-014 addendum](DECISIONS.md#d-014-addendum-editor-milestone-3-headless-capture-2026-10-25))
+- [ ] Copy and paste: follow-up F-27
+- [ ] **Mac:** the checklist below
+
+### Mac playtest checklist for editor milestone 3
+
+- [ ] 0 and - choose the valve and gate brushes; their palette slots read clearly
+- [ ] A painted valve is ringed in yellow; gates painted next are linked to it by lines; the problem about
+  a valve with no gates goes once the first gate is down
+- [ ] Option-click a valve or gate in a copy of Reservoir: its valve is ringed and new gates join it
+- [ ] A gate painted with no valve selected says to select one, and is outlined until linked
+- [ ] O over a valve or gate opens or closes all of them together; Cmd+Z undoes it
+- [ ] Playtest a sluice you built: Space at the valve opens its gates
+- [ ] R shades what cannot be reached by walking and digging; the bar's summary matches what you see
+- [ ] Cmd-click fills an area; Cmd-right-click fills it with floor; one Cmd+Z undoes the whole fill. Check
+  that Cmd-click is not taken by macOS
+
 ## Arcade music (owner request; delivered in the cloud, Mac playtest pending)
 
 The owner asked for arcade music that can be turned off and on, and chose the key, the default and the
@@ -351,7 +384,9 @@ Run `go run ./cmd/deepshift` with no flags.
 | F-21 | An audible cue for a nearby crawler | Walking crawlers are silent (D-044), so a threat out of view cannot be heard; needs care not to become noise |
 | F-22 | Remaining Phase 5 items: structural supports, local preferences, a visual theme | SPEC §11 Phase 5; not started (D-040). The editor's first milestone is done (D-045) |
 | F-23 | ~~Editor milestone 2: your caves in the cave list ("My caves"); replays of playtests of saved, unchanged caves~~ | Done (D-050, D-051) |
-| F-24 | Editor milestone 3: valve and gate brushes with linking; a "reachable from the start" overlay; flood fill; copy and paste | D-045 plan; caves with mechanisms can be edited, but new valves and gates cannot be placed (D-048) |
+| F-24 | ~~Editor milestone 3: valve and gate brushes with linking; a "reachable from the start" overlay; flood fill~~ | Done (D-052 to D-054); copy and paste moved to F-27 |
 | F-25 | Editor: "save as" / rename, metadata editing, and a full, readable problem list | D-048: a cave keeps its first file name, and the bar shows only the first problems |
 | F-26 | Move the headless editor capture into `tools/vmcapture` (F-6) | The editor sessions were scripted by hand (D-014 addendum) |
+| F-27 | Editor: copy and paste a selection, keeping valve and gate links | D-054: needs a selection separate from the box fill, and rules for copied mechanisms |
+| F-28 | A solver-backed reach check that follows the real rules (falling, pushing, valves, water) | D-053: the overlay is walking and digging only |
 | F-29 | More music: a longer loop, or a tune per region or for the title | One 32 s loop (D-055) may wear in long caves; judge in the Mac playtest |
