@@ -2,7 +2,7 @@
 // the title menu, plays the embedded caves and renders them with Ebitengine.
 // No web view, no server. Each finished attempt (completed, crushed or
 // caught) is saved as a replay under the user config directory, for bug
-// reports.
+// reports. The cave editor saves the player's own caves beside it.
 //
 // Ebitengine is initialised only here and in internal/render, so `go test`
 // never needs a display. GUI behaviour is compile-only in cloud CI and still
@@ -24,16 +24,20 @@ import (
 
 	"github.com/townhill/deep-shift/assets"
 	"github.com/townhill/deep-shift/internal/audio"
+	"github.com/townhill/deep-shift/internal/editor"
 	"github.com/townhill/deep-shift/internal/game"
 	"github.com/townhill/deep-shift/internal/level"
 	"github.com/townhill/deep-shift/internal/perf"
 	"github.com/townhill/deep-shift/internal/render"
 	"github.com/townhill/deep-shift/internal/replay"
+	"github.com/townhill/deep-shift/internal/sim"
 )
 
 func main() {
 	cave := flag.String("cave", "", "start at this embedded cave id (cave_01 to cave_05, crawler_warren or test_cave) or play this cave JSON file")
-	replayDir := flag.String("replay-dir", defaultReplayDir(), "directory for replays of finished attempts (empty: do not save)")
+	edit := flag.String("edit", "", "open the cave editor on this cave: a cave JSON file (saved back to it), an embedded cave id (edited as a copy) or \"new\"")
+	replayDir := flag.String("replay-dir", userDir("replays"), "directory for replays of finished attempts (empty: do not save)")
+	cavesDir := flag.String("caves-dir", userDir("caves"), "directory for caves made in the editor (empty: new caves cannot be saved)")
 	showVersion := flag.Bool("version", false, "print the build version and exit without opening a window")
 	noAudio := flag.Bool("no-audio", false, "do not open an audio device (for machines without sound output)")
 	noMusic := flag.Bool("no-music", false, "start with the music off (toggle with B)")
@@ -46,6 +50,9 @@ func main() {
 		return
 	}
 
+	if *cave != "" && *edit != "" {
+		log.Fatal("-cave and -edit cannot be used together")
+	}
 	levels, campaign, start, err := loadLevels(*cave)
 	if err != nil {
 		log.Fatal(err)
@@ -54,9 +61,19 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	shell.EnableEditor(render.EditorLayout(), editor.DirStorage{Path: *cavesDir})
 	if start >= 0 {
 		if err := shell.Play(start); err != nil {
 			log.Fatal(err)
+		}
+	}
+	if *edit != "" {
+		d, path, err := editTarget(*edit, levels)
+		if err == nil {
+			err = shell.OpenEditor(d, path)
+		}
+		if err != nil {
+			log.Fatalf("-edit %q: %v", *edit, err)
 		}
 	}
 
@@ -106,14 +123,36 @@ func loadLevels(arg string) (levels []*level.Level, campaign, start int, err err
 	return []*level.Level{l}, 0, 0, nil
 }
 
-// defaultReplayDir is <user config dir>/Deep Shift/replays, which is
-// ~/Library/Application Support/Deep Shift/replays on macOS.
-func defaultReplayDir() string {
+// editTarget resolves the -edit argument: "new" for a new cave, an embedded
+// cave id for a copy of it, or a cave file, which saves go back to. A file
+// opens even if it does not validate yet, so work in progress can be fixed.
+func editTarget(arg string, levels []*level.Level) (level.Draft, string, error) {
+	if arg == "new" {
+		return editor.NewCave(), "", nil
+	}
+	if l, ok := level.ByID(levels, arg); ok {
+		return editor.CopyOf(l), "", nil
+	}
+	data, err := os.ReadFile(arg)
+	if err != nil {
+		return level.Draft{}, "", fmt.Errorf("neither \"new\", an embedded cave id nor a readable file: %w", err)
+	}
+	d, err := level.DecodeDraft(arg, data)
+	if err != nil {
+		return level.Draft{}, "", err
+	}
+	path, err := filepath.Abs(arg)
+	return d, path, err
+}
+
+// userDir is <user config dir>/Deep Shift/<name>, which is
+// ~/Library/Application Support/Deep Shift/<name> on macOS.
+func userDir(name string) string {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(dir, "Deep Shift", "replays")
+	return filepath.Join(dir, "Deep Shift", name)
 }
 
 // perfWindow is how many updates and draws the overlay averages over: four
@@ -135,36 +174,47 @@ type app struct {
 func (a *app) Update() error {
 	start := time.Now()
 	defer func() { a.updates.Add(time.Since(start)) }()
-	if inpututil.IsKeyJustPressed(ebiten.KeyBackquote) || inpututil.IsKeyJustPressed(ebiten.KeyF3) {
+	// Letters typed into an editor text field are text, not shortcuts.
+	shortcuts := !a.shell.TextEntry()
+	if inpututil.IsKeyJustPressed(ebiten.KeyF3) || shortcuts && inpututil.IsKeyJustPressed(ebiten.KeyBackquote) {
 		a.perfOn = !a.perfOn
 		if !a.perfOn {
 			log.Print("perf: " + strings.Join(a.perfLines(), "; "))
 		}
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyF) {
+	if shortcuts && inpututil.IsKeyJustPressed(ebiten.KeyF) {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	}
 	var notice string
-	if inpututil.IsKeyJustPressed(ebiten.KeyM) {
+	if shortcuts && inpututil.IsKeyJustPressed(ebiten.KeyM) {
 		notice = a.settings.ToggleMute()
 		a.sound.SetMuted(a.settings.Muted())
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyB) {
+	if shortcuts && inpututil.IsKeyJustPressed(ebiten.KeyB) {
 		notice = a.settings.ToggleMusic()
 	}
-	a.shell.Update(readControls())
+	// Exactly one of the shell's inputs per update, chosen by the screen at
+	// its start, so a key that switches screens is never seen twice.
+	if a.shell.Screen() == game.ScreenEditor {
+		a.shell.UpdateEditor(readEditorInput())
+	} else {
+		a.shell.Update(readControls())
+	}
 	a.sound.SetMusic(a.settings.MusicPlaying(a.shell.Paused()))
-	if a.shell.Screen() != game.ScreenPlaying {
+	playtest := a.shell.Screen() == game.ScreenPlaytest
+	if a.shell.Screen() != game.ScreenPlaying && !playtest {
 		return nil
 	}
-	s := a.shell.Playlist().Session()
+	s := a.shell.Session()
 	if notice != "" {
 		s.Notify(notice)
 	}
 	for _, cue := range s.TakeCues() {
 		a.sound.Play(cue)
 	}
-	if r, ok := s.FinishedReplay(); ok && a.replayDir != "" {
+	// Playtests are not saved: the cave may not be saved yet, and a replay
+	// is only useful beside its cave file.
+	if r, ok := s.FinishedReplay(); ok && a.replayDir != "" && !playtest {
 		path, err := replay.Save(a.replayDir, r, time.Now())
 		if err != nil {
 			log.Printf("saving replay: %v", err)
@@ -179,10 +229,13 @@ func (a *app) Update() error {
 
 func (a *app) Draw(screen *ebiten.Image) {
 	start := time.Now()
-	if a.shell.Screen() != game.ScreenPlaying {
+	switch a.shell.Screen() {
+	case game.ScreenPlaying, game.ScreenPlaytest:
+		a.renderer.Draw(screen, a.shell.Session().Frame())
+	case game.ScreenEditor:
+		a.renderer.DrawEditor(screen, a.shell.Editor().View())
+	default:
 		a.renderer.DrawMenu(screen, a.shell.Menu())
-	} else {
-		a.renderer.Draw(screen, a.shell.Playlist().Session().Frame())
 	}
 	a.draws.Add(time.Since(start))
 	if a.perfOn {
@@ -229,7 +282,84 @@ func readControls() game.Controls {
 		Restart:  inpututil.IsKeyJustPressed(ebiten.KeyR),
 		Next:     inpututil.IsKeyJustPressed(ebiten.KeyN),
 		Menu:     inpututil.IsKeyJustPressed(ebiten.KeyC),
+		Edit:     inpututil.IsKeyJustPressed(ebiten.KeyP),
 	}
+}
+
+// brushKeys choose the editor's palette brushes, in order.
+var brushKeys = [...]ebiten.Key{
+	ebiten.KeyDigit1, ebiten.KeyDigit2, ebiten.KeyDigit3, ebiten.KeyDigit4, ebiten.KeyDigit5,
+	ebiten.KeyDigit6, ebiten.KeyDigit7, ebiten.KeyDigit8, ebiten.KeyDigit9,
+}
+
+// readEditorInput samples the mouse and keyboard for the cave editor. Cmd or
+// Control (for non-Mac keyboards) turns Z, S and the arrows into commands;
+// without them the arrows and WASD scroll and letters are shortcuts. The
+// mouse position is in logical screen pixels, the editor layout's
+// coordinates.
+func readEditorInput() editor.Input {
+	pressed := inpututil.IsKeyJustPressed
+	held := func(keys ...ebiten.Key) bool {
+		for _, k := range keys {
+			if ebiten.IsKeyPressed(k) {
+				return true
+			}
+		}
+		return false
+	}
+	cmd := held(ebiten.KeyMeta, ebiten.KeyControl)
+	shift := held(ebiten.KeyShift)
+	mx, my := ebiten.CursorPosition()
+	wx, wy := ebiten.Wheel()
+	in := editor.Input{
+		MouseX: mx, MouseY: my,
+		Paint: ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft),
+		Erase: ebiten.IsMouseButtonPressed(ebiten.MouseButtonRight),
+		Shift: shift, Alt: held(ebiten.KeyAlt),
+		WheelX: wx, WheelY: wy,
+		Settings:  pressed(ebiten.KeyTab),
+		Back:      pressed(ebiten.KeyEscape),
+		Enter:     pressed(ebiten.KeyEnter) || pressed(ebiten.KeyNumpadEnter),
+		Backspace: repeating(ebiten.KeyBackspace),
+	}
+	arrows := map[ebiten.Key]sim.Dir{
+		ebiten.KeyArrowUp: sim.DirUp, ebiten.KeyArrowDown: sim.DirDown,
+		ebiten.KeyArrowLeft: sim.DirLeft, ebiten.KeyArrowRight: sim.DirRight,
+	}
+	if cmd {
+		in.Undo = pressed(ebiten.KeyZ) && !shift
+		in.Redo = pressed(ebiten.KeyZ) && shift || pressed(ebiten.KeyY)
+		in.Save = pressed(ebiten.KeyS)
+		for k, d := range arrows {
+			switch {
+			case pressed(k) && shift:
+				in.Shrink = d
+			case pressed(k):
+				in.Grow = d
+			}
+		}
+		return in
+	}
+	in.Up = held(ebiten.KeyArrowUp, ebiten.KeyW)
+	in.Down = held(ebiten.KeyArrowDown, ebiten.KeyS)
+	in.Left = held(ebiten.KeyArrowLeft, ebiten.KeyA)
+	in.Right = held(ebiten.KeyArrowRight, ebiten.KeyD)
+	in.Playtest = pressed(ebiten.KeyP)
+	in.Grid = pressed(ebiten.KeyG)
+	for i, k := range brushKeys {
+		if pressed(k) {
+			in.Brush = i + 1
+		}
+	}
+	in.Chars = ebiten.AppendInputChars(nil)
+	return in
+}
+
+// repeating reports a key press, then repeats it every 3 updates once the key
+// has been held for half a second, like text-field key repeat.
+func repeating(k ebiten.Key) bool {
+	d := inpututil.KeyPressDuration(k)
+	return d == 1 || d >= game.UpdatesPerSecond/2 && d%3 == 0
 }
 
 // buildVersion reports the VCS revision Go embedded at build time.

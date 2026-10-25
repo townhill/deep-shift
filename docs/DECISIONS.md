@@ -710,6 +710,164 @@ and water are stable, with tests for movement order, collision and reset.
 - **Menus:** the cave list shows Crawler Warren under Extras, before the Proving Ground.
 - Linux/OpenGL evidence only, not a Mac test.
 
+## D-045: The cave editor, milestone 1 (owner decision)
+
+- On 2026-10-25 the owner chose the **cave editor** as the next Phase 5 item (SPEC §8 "Level editor", §11
+  Phase 5). They accepted a three-milestone plan and asked for playtesting to be part of the first:
+  1. paint, validate, save and **playtest** (this change);
+  2. the player's own caves in the cave list, and replays of playtests;
+  3. valves, gates and their links, plus design aids.
+- **Built into the game app,** not a separate program. This matches SPEC §14's "native integrated cave
+  editor, quick playtesting", needs no second `.app`, and reuses the renderer, the sprites and
+  `game.Session`.
+- **Offered to everyone** from the title menu ("Cave editor"), and with `-edit FILE|ID|new` for
+  development.
+- **SPEC §8's minimum is met:** painting terrain; placing the player, boulders, crystals, the exit and
+  water; save and load with validation. Crawlers are paintable too, since they are only arrows in the
+  rows. Valves and gates are not yet, because they need linking into mechanisms (milestone 3).
+- Like D-033 and D-040, this goes ahead before the pending Mac playtests. No rule changes: rule version 4,
+  cave format version 4, and every golden replay unchanged.
+
+## D-046: Canonical cave layout, `cavetool fmt`, and drafts
+
+- **Writing caves.** The editor must write caves back to JSON. `level.Draft` is a cave file's content
+  before validation, and `Draft.Encode` writes the layout the hand-made caves already used:
+  - fields in documentation order;
+  - one row per line, so the grid reads as a picture in a diff;
+  - one mechanism per line;
+  - metadata keys sorted;
+  - no `mechanisms` or `metadata` field when there are none.
+- **The embedded caves are canonical.** Two caves wrote their mechanisms over several lines, so `cavetool
+  fmt` reformatted them (cave 05, Crawler Warren).
+  - `Checksum` hashes parsed values, not text, so their checksums are unchanged and every golden replay
+    still matches.
+  - A test and a CI step (`cavetool fmt -check`) keep the embedded caves canonical.
+  - So the editor opens and saves any embedded cave byte for byte, which is tested for all seven.
+- **Work in progress.** `level.DecodeDraft` reads a cave checking only the JSON shape, so the editor can
+  reopen a cave saved with problems and fix it. `level.Parse`, which the game uses, is unchanged.
+- **Located problems.** `level.Problem.At` lists the cells a problem concerns, so the editor can outline
+  them:
+  - unknown symbols, and symbols too new for the file's format version;
+  - extra player starts or exits;
+  - wrong or unlisted valve and gate cells, and gate state mismatches.
+- **One validator.** The editor validates by encoding the cave and running `level.Parse`, the game's own
+  loader. Validation lives in one place, and the editor and the game cannot disagree.
+
+## D-047: A cave keeps its format version
+
+- A cave's `format_version` is part of its checksum, so changing it breaks the cave's golden replays.
+- The editor **keeps the version it opened**. Painting a symbol the version cannot hold raises it to the
+  first version that can, and says that replays of the old version will not match. For example, water in
+  the version 1 Proving Ground raises it to version 3.
+- The version is never lowered. A new cave uses the current version.
+- A file with no version, or one too old, opens as the current version; such a file never loaded in the
+  game, so no replay depends on it. A file newer than this build does not open.
+
+## D-048: Editing, saving and the editor's keys
+
+- **Layout.** A status bar (cave, size, quota, problems, unsaved), a 30×16-tile view, and a bottom bar
+  with the palette and the first problems. `editor.Layout` describes it for both hit-testing and drawing.
+  It is pure Go (like `Camera`, D-012), so the mouse mapping is unit-tested.
+- **Brushes (1 to 9):** wall, earth, floor, crystal, boulder, player start, exit, water, crawler.
+  - Pressing a brush's key again, or clicking its slot, moves to the next variant: water from deep to 1,
+    and crawlers turning clockwise.
+  - A new cave starts as one screen of earth in a wall, with the player start and the exit in opposite
+    corners and no quota.
+- **The mouse:**
+  - left drag paints along the pointer's path, with no gaps however fast it moves;
+  - right drag erases to floor;
+  - Shift-drag fills a box on release;
+  - Alt-click picks the brush of a cell;
+  - Esc cancels a stroke in progress.
+- **Moving the view:** arrows, WASD or the wheel scroll it. A cave smaller than the view is centred.
+- **An edit changes only the cells painted, with two exceptions:**
+  - The player start and the exit **move** rather than duplicate, since a cave needs exactly one of each.
+    A box of either places one, where the drag ended.
+  - Painting over a valve or gate **takes it out of its mechanism**. A removed valve takes its mechanism
+    with it, and its gates are outlined as unlisted until they are removed. Nothing else changes behind
+    the designer's back.
+- **Resizing.** Cmd+arrow adds a column or row on that side; Cmd+Shift+arrow removes one.
+  - New cells are wall, the neutral fill at a cave's edge.
+  - Mechanism positions move with their cells, and the view stays on the same cells.
+  - The size limits are 1 to 256 each way.
+- **Undo and settings.**
+  - Undo (Cmd+Z) and redo (Cmd+Shift+Z) take one step per stroke, box, resize or settings change, 200
+    steps deep.
+  - Tab opens the settings: title, id, seed and quota, edited as text. Ids accept only valid characters;
+    the seed and quota take digits, and the seed is range-checked.
+- **Saving (Cmd+S):**
+  - A file opened from disk saves back to it.
+  - A new cave or a copy saves as `<id>.json` in `~/Library/Application Support/Deep Shift/caves/`
+    (`-caves-dir`). It never replaces an existing file without a second Cmd+S.
+  - Writes are atomic: a temporary file, then a rename.
+  - **A cave with problems still saves,** with a warning, so work is never lost; the game will not play it
+    until they are fixed.
+  - Esc with unsaved changes asks first.
+  - A copy of a built-in cave gets `_copy` and ` (copy)` added to its id and title, and
+    `{"based_on": <id>}` as metadata. Its layout, and so its checksum, is the original's.
+- **Shortcuts in text fields.** F, M and `` ` `` are not shortcuts while a settings field is being typed
+  into.
+- **Cmd or Control.** Cmd shortcuts accept Command or Control, for keyboards without a Command key. On a
+  Mac, Ctrl+arrows would switch Spaces, so Cmd is the one to use there.
+- **Not yet built:**
+  - valve and gate brushes;
+  - editing metadata;
+  - "save as" (a cave keeps the file name of its first save, even if its id changes);
+  - a full problem list (the bar shows the first one or two, and outlines every cell concerned).
+
+## D-049: Playtests
+
+- **P plays the cave as it stands.**
+  - The editor validates it with `level.Parse`. The shell starts an ordinary `game.Session` on the
+    resulting level, so a playtest is the game, not an imitation: cave 01's golden replay completes a copy
+    of cave 01 in a playtest, with the same final hash (tested).
+  - A cave with problems cannot be playtested, and the bar says how many problems are left to fix.
+- **P returns to the editor at any time,** with every edit, the view and the undo history intact.
+  - The overlays say "P: back to the editor" instead of the playlist's N and C, which do nothing in a
+    playtest (`Session.SetNavKeys`).
+  - The shell feeds exactly one of its inputs per update, chosen by the screen at the update's start, and
+    the editor ignores input until every key is released. So the P that ends a playtest never starts
+    another.
+- **Playtests are not saved as replays.** The cave may not be saved, and a replay is only useful beside its
+  cave file. Replays of saved, unchanged caves are milestone 2.
+- **Playtests are not campaign progress.** They never mark a cave "(done)".
+
+## D-012 addendum: `internal/editor` (2026-10-25)
+
+- `internal/editor` now exists, scoped as D-045 to D-049 describe. It is pure Go, like `internal/game`. A
+  test allows it only the standard library and the pure `internal/level` and `internal/sim` packages.
+- `internal/render` draws its `View`, and `cmd/deepshift` turns the mouse and keyboard into its `Input`.
+
+## D-014 addendum: cave editor headless capture (2026-10-25)
+
+- The by-hand `exp/vmhost` setup (Linux, Xvfb, Mesa software GL; nothing committed) drove the unmodified
+  app. The driver gained an `-args` flag for the guest's flags, and scripted mouse, key and typed-text
+  input. Four sessions were run:
+  - **The title menu** shows "Cave editor". Its list shows New cave, the copies of the built-in caves, and
+    "(more below)" where the list scrolls.
+  - **A new cave (`-edit new`).** Each of these drew as intended:
+    - crystals painted in a drag;
+    - the Shift-drag box preview, then the boulders it filled;
+    - deep and shallow water;
+    - a crawler, and the translucent preview of the crawler brush under the mouse;
+    - a wall over the exit, giving "1 problem" and "rows: no exit ('E') found" in the bar, then Cmd+Z;
+    - the settings panel, and a title typed into it.
+  - **A playtest of that cave.** It started with "Playtest: P returns to the editor". Its pause overlay
+    read "Esc: resume   R: restart   P: back to the editor", and P returned to the editor with every edit.
+    Cmd+S showed "Saved new_cave.json", and Esc showed the list with the saved cave selected under "Your
+    caves".
+  - **A copy of Crawler Warren** showed the valve's link to its gate. Painting over the valve outlined the
+    orphaned gate in red, with the problem text in the bar.
+  - **The 40×24 Proving Ground (a copy of its file)** scrolled to its edge and grew by two columns. Esc
+    with unsaved changes asked first, and the file was not touched.
+- **The capture found four faults, now fixed:**
+  - growing the cave left the new columns out of view;
+  - the grid was too faint to see;
+  - saved caves were private (0600) rather than 0644;
+  - the floor brush's slot was hard to see against the bar, so every slot now has a frame.
+- This is Linux/OpenGL evidence only, not a Mac test. The trackpad, Retina scaling, the Command key and
+  wheel direction on macOS still need a Mac.
+
 ## D-055: Arcade music (owner decision)
 
 Numbered D-055 because the open cave-editor pull requests already use D-045 to D-054 (and follow-ups F-23
@@ -787,3 +945,17 @@ ambience/music".
   app never rewinds or seeks the music on resume, but not how a real device sounds at a pause. No cue
   played in these runs, so M was checked against the music only. Linux/OpenGL evidence only; the music has
   not been heard on a Mac.
+
+## D-055 addendum: the music and the cave editor (2026-10-25)
+
+The music (D-055) reached master before the editor, so the editor branch took it in with a merge. Where
+the two meet:
+
+- **B is not a shortcut in a text field,** like F, M and `` ` `` (D-048): while a settings field is being
+  typed into, B is a letter.
+- **A paused playtest holds the music,** like a paused cave. `Shell.Paused` covers both, and a test pauses
+  a playtest and checks.
+- **The music plays in the edit list and the editor,** as on the other menus, and B turns it off. The edit
+  list's footer names M and B; the editor's key bar has no room for them.
+- **No text notice outside caves and playtests:** in the editor, as on the menus, M and B change the sound
+  without a message.

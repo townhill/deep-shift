@@ -25,18 +25,7 @@
     "###V##########################"
   ],
   "mechanisms": [
-    {
-      "valve": {
-        "x": 3,
-        "y": 15
-      },
-      "gates": [
-        {
-          "x": 10,
-          "y": 10
-        }
-      ]
-    }
+    {"valve": {"x": 3, "y": 15}, "gates": [{"x": 10, "y": 10}]}
   ],
   "metadata": {
     "author": "Deep Shift project (original layout)",
