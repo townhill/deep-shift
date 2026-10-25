@@ -210,6 +210,32 @@ Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave cr
   enough to wade to the exit
 - [ ] Feel: is the crawler speed (one cell per 0.3 s) right? Can you read where a crawler will go next?
 
+## Arcade music (owner request; delivered in the cloud, Mac playtest pending)
+
+The owner asked for arcade music that can be turned off and on, and chose the key, the default and the
+pause behaviour ([D-045](DECISIONS.md#d-045-arcade-music-owner-decision)). No rule changed: rule version 4.
+
+- [x] An original 32 s loop synthesised in code: pulse lead, arpeggio, triangle bass and noise drums. Tests
+  pin its length, its silent seam and its peak below the cues (Cloud)
+- [x] B turns the music off and on; M mutes it with everything else; a paused cave holds it; `-no-music`
+  starts with it off. The rules and their notices are tested headlessly (Cloud)
+- [x] The HUD hint and both menu footers name M and B, and fit their lines (Cloud)
+- [ ] **Mac:** listen to it (checklist below)
+
+### Mac playtest checklist for the music
+
+Run `go run ./cmd/deepshift` with no flags.
+
+- [ ] Music starts on the title screen and keeps going into the cave list and a cave
+- [ ] It loops with no click, gap or jump every 32 s
+- [ ] Every cue (digging, crystals, landings, the valve, completion) is still easy to hear over it, and it
+  never crackles or clips, even when several cues sound together
+- [ ] B turns it off ("Music off (B: on)") and back on ("Music on") in a cave, the title and the cave list
+- [ ] M silences everything; M again brings the music back, unless B turned it off
+- [ ] Esc pauses the music with the cave; Esc again resumes it where it stopped
+- [ ] `-no-music` starts silent until B is pressed
+- [ ] Feel: is it pleasant over a long cave, or wearing? Is the tempo right? Too loud or too quiet?
+
 ## Follow-ups
 
 | ID | Follow-up | Why |
@@ -229,10 +255,11 @@ Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave cr
 | F-13 | Tune water: capacity, cadence, how far it spreads | Provisional values (D-027); needs the cave 04 Mac playtest |
 | F-14 | A splash cue when an object enters water | Valve and gate cues are done (D-038); a splash needs a new event, so a rule version |
 | F-15 | Slow the player in shallow water? | SPEC §6.3 allows it later; it must be a rule (same in replays), not a renderer effect |
-| F-16 | Save campaign progress and settings locally | Progress is per run only (D-037); SPEC §11 Phase 5 "local preferences" |
-| F-17 | Volume control beyond mute | SPEC §4 accessibility; M only toggles (D-038) |
+| F-16 | Save campaign progress and settings locally | Progress, sound and music settings are per run only (D-037, D-045); SPEC §11 Phase 5 "local preferences" |
+| F-17 | Volume control beyond mute, with separate music and effects levels | SPEC §4 accessibility; M and B only toggle (D-038, D-045) |
 | F-18 | Reduce-motion option for the water easing and glides | SPEC §4 accessibility, with F-8 |
 | F-19 | Tune `CrawlerIntervalTicks` | Provisional (D-041); needs the Crawler Warren Mac playtest |
 | F-20 | Crawlers in campaign caves, and more kinds (a right-hand crawler, a fixed patrol) | Crawler Warren is the only cave with them; SPEC §8's regions call for creatures |
 | F-21 | An audible cue for a nearby crawler | Walking crawlers are silent (D-044), so a threat out of view cannot be heard; needs care not to become noise |
 | F-22 | Remaining Phase 5 items: cave editor, structural supports, local preferences, a visual theme | SPEC §11 Phase 5; not started (D-040) |
+| F-23 | More music: a longer loop, or a tune per region or for the title | One 32 s loop (D-045) may wear in long caves; judge in the Mac playtest |

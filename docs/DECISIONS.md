@@ -709,3 +709,48 @@ and water are stable, with tests for movement order, collision and reset.
   each an exact cue match: dig, collect, push, crawler gone, land, exit open, valve, gate and complete.
 - **Menus:** the cave list shows Crawler Warren under Extras, before the Proving Ground.
 - Linux/OpenGL evidence only, not a Mac test.
+
+## D-045: Arcade music (owner decision)
+
+On 2026-10-25 the owner asked for arcade music that can be turned off and on. From a written plan they
+chose a separate B key, music on at launch, and Esc pausing it. SPEC §2 already allows "optional
+ambience/music".
+
+- **Synthesised in code, like the cues** (`internal/sfx/music.go`, D-038). There is no audio file to
+  license or ship, and the loop always gives the same bytes. The tune was written from scratch for this
+  game; it is not taken or adapted from Boulder Dash or any other game.
+- **The tune:** 16 bars of 4/4 at 120 BPM (32 s) in A minor. An eight-bar theme over Am F C G, Am F G E is
+  answered by eight syncopated bars over Dm Am F C, Dm Am E E, whose last bar leads back to the start.
+  Four parts in the style of an early arcade sound chip:
+  - a pulse-wave lead (25% duty), with a gentle vibrato on long notes;
+  - a thinner pulse arpeggio (12.5%), rising through the chord one tone per sixteenth;
+  - a triangle bass jumping octaves in eighth notes;
+  - noise drums: kick on 1 and 3, snare on 2 and 4, hi-hats between, and a fill every eighth bar.
+
+  Pulse edges are smoothed (PolyBLEP), so high notes do not alias into harsh extra tones.
+- **Seamless loop:** a sixteenth note is exactly 6,000 samples, so the loop ends on a bar line. Every note
+  fades out within its own steps, so the loop starts and ends in silence and repeats with no click. A test
+  pins both.
+- **Quieter than the cues:** the music peaks at half a cue's peak (0.25 of full scale). Cues stay the
+  loudest sounds, so the music does not mask one the player relies on (SPEC §2), and music plus the
+  loudest cue cannot clip. Provisional: the balance needs the Mac playtest (and F-17, volume control).
+- **Keys:**
+  - M still turns all sound off and on, music included. It was already documented and is in the Mac
+    checklists.
+  - B turns the music alone off and on. Pressed while sound is off, B turns the music on for when M brings
+    sound back, and says so.
+  - With `-no-audio`, both keys say there is no sound.
+- **Where it plays:** the title, the cave list and the caves, from launch.
+  - It holds while a cave is paused, because a paused cave is silent (D-038), and resumes where it stopped.
+  - The cave list opened from a pause is a menu, so the music plays there.
+  - It keeps playing on the completion and death screens; their cues play over it.
+- **Settings last one run.** There are no saved preferences yet (F-16); `-no-music` starts with the music
+  off.
+- **Code:** the rules and their notices are a pure-Go `game.Sound`, tested headlessly; M's handling moved
+  there from `cmd/deepshift`. `internal/audio` loops the PCM with Ebitengine's `InfiniteLoop`. The loop
+  takes 6 MB of memory and about 90 ms to generate at startup on the cloud runner, before the window opens.
+- **The simulation is untouched:** the music reads no game state. Rule version, cave format, replays and
+  hashes are unchanged.
+- **HUD:** the controls hint now names B. To fit, its gaps shrank to two spaces. It is 78 of the 79
+  characters a HUD line holds (a test checks the hint and both menu footers), so another key needs a
+  shorter hint or a real UI font (F-4).
