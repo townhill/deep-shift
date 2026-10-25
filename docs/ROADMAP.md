@@ -213,7 +213,7 @@ Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave cr
 ## Arcade music (owner request; delivered in the cloud, Mac playtest pending)
 
 The owner asked for arcade music that can be turned off and on, and chose the key, the default and the
-pause behaviour ([D-045](DECISIONS.md#d-045-arcade-music-owner-decision)). No rule changed: rule version 4.
+pause behaviour ([D-055](DECISIONS.md#d-055-arcade-music-owner-decision)). No rule changed: rule version 4.
 
 - [x] An original 32 s loop synthesised in code: pulse lead, arpeggio, triangle bass and noise drums. Tests
   pin its length, its silent seam and its peak below the cues (Cloud)
@@ -257,11 +257,11 @@ Run `go run ./cmd/deepshift` with no flags.
 | F-13 | Tune water: capacity, cadence, how far it spreads | Provisional values (D-027); needs the cave 04 Mac playtest |
 | F-14 | A splash cue when an object enters water | Valve and gate cues are done (D-038); a splash needs a new event, so a rule version |
 | F-15 | Slow the player in shallow water? | SPEC §6.3 allows it later; it must be a rule (same in replays), not a renderer effect |
-| F-16 | Save campaign progress and settings locally | Progress, sound and music settings are per run only (D-037, D-045); SPEC §11 Phase 5 "local preferences" |
-| F-17 | Volume control beyond mute, with separate music and effects levels | SPEC §4 accessibility; M and B only toggle (D-038, D-045) |
+| F-16 | Save campaign progress and settings locally | Progress, sound and music settings are per run only (D-037, D-055); SPEC §11 Phase 5 "local preferences" |
+| F-17 | Volume control beyond mute, with separate music and effects levels | SPEC §4 accessibility; M and B only toggle (D-038, D-055) |
 | F-18 | Reduce-motion option for the water easing and glides | SPEC §4 accessibility, with F-8 |
 | F-19 | Tune `CrawlerIntervalTicks` | Provisional (D-041); needs the Crawler Warren Mac playtest |
 | F-20 | Crawlers in campaign caves, and more kinds (a right-hand crawler, a fixed patrol) | Crawler Warren is the only cave with them; SPEC §8's regions call for creatures |
 | F-21 | An audible cue for a nearby crawler | Walking crawlers are silent (D-044), so a threat out of view cannot be heard; needs care not to become noise |
 | F-22 | Remaining Phase 5 items: cave editor, structural supports, local preferences, a visual theme | SPEC §11 Phase 5; not started (D-040) |
-| F-23 | More music: a longer loop, or a tune per region or for the title | One 32 s loop (D-045) may wear in long caves; judge in the Mac playtest |
+| F-29 | More music: a longer loop, or a tune per region or for the title | One 32 s loop (D-055) may wear in long caves; judge in the Mac playtest |

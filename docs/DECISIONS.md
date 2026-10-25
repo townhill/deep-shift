@@ -710,7 +710,10 @@ and water are stable, with tests for movement order, collision and reset.
 - **Menus:** the cave list shows Crawler Warren under Extras, before the Proving Ground.
 - Linux/OpenGL evidence only, not a Mac test.
 
-## D-045: Arcade music (owner decision)
+## D-055: Arcade music (owner decision)
+
+Numbered D-055 because the open cave-editor pull requests already use D-045 to D-054 (and follow-ups F-23
+to F-28); this one merged first.
 
 On 2026-10-25 the owner asked for arcade music that can be turned off and on. From a written plan they
 chose a separate B key, music on at launch, and Esc pausing it. SPEC §2 already allows "optional
