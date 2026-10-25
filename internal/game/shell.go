@@ -141,6 +141,12 @@ func (s *Shell) change(to Screen) {
 // Screen returns the screen being shown.
 func (s *Shell) Screen() Screen { return s.screen }
 
+// Paused reports whether a cave is on screen and paused. A paused cave left
+// for the cave list is not on screen.
+func (s *Shell) Paused() bool {
+	return s.screen == ScreenPlaying && s.playlist.Session().Paused()
+}
+
 // Playlist returns the playlist; nil until a cave has been started.
 func (s *Shell) Playlist() *Playlist { return s.playlist }
 
@@ -170,7 +176,7 @@ func (s *Shell) Menu() MenuView {
 		v := MenuView{
 			Title:    "DEEP SHIFT",
 			Subtitle: "Dig, collect, and let the cave do the rest",
-			Footer:   "Up/Down: choose   Space/Enter: select   Cmd+Q: quit",
+			Footer:   "Up/Down: choose   Space/Enter: select   M: sound   B: music   Cmd+Q: quit",
 		}
 		for i, e := range titleEntries {
 			v.Entries = append(v.Entries, MenuEntry{Text: e, Selected: i == s.cursor})
@@ -182,7 +188,7 @@ func (s *Shell) Menu() MenuView {
 	}
 	v := MenuView{
 		Title:  "CHOOSE A CAVE",
-		Footer: "Up/Down: choose   Space/Enter: play   Esc: back",
+		Footer: "Up/Down: choose   Space/Enter: play   Esc: back   M: sound   B: music",
 	}
 	done := 0
 	for i, l := range s.levels {
