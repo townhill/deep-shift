@@ -84,10 +84,12 @@ func (r *Renderer) drawEditorWorld(v editor.View) {
 		}
 	}
 	if v.Reach != nil {
-		// The overlay shades every cell the player cannot reach.
+		// The overlay shades the cells the player cannot reach. Walls are
+		// left alone: they are never reachable, and shading them would hide
+		// the unreachable floor and earth that matter.
 		for y := max(y0, 0); y <= y1; y++ {
 			for x := max(x0, 0); x <= x1; x++ {
-				if !v.Reach[y*v.Width+x] {
+				if i := y*v.Width + x; !v.Reach[i] && v.Cells[i].Terrain != sim.TerrainWall {
 					left, top := cellPos(x, y)
 					r.fillRectF(r.world, left, top, TileSize, TileSize, shadeColour)
 				}
