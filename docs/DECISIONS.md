@@ -709,3 +709,127 @@ and water are stable, with tests for movement order, collision and reset.
   each an exact cue match: dig, collect, push, crawler gone, land, exit open, valve, gate and complete.
 - **Menus:** the cave list shows Crawler Warren under Extras, before the Proving Ground.
 - Linux/OpenGL evidence only, not a Mac test.
+
+## D-045: Glimmers and shattering (rule version 5, owner decisions)
+
+- **Request (owner, 2026-10-25):** in the 1984 game, a rock falling on a butterfly turned it into
+  diamonds; add that mechanic. The plan offered five choices with recommendations, and the owner took all
+  five:
+  1. **A 3×3 shattering that destroys nothing.** Only empty, dry floor in the block becomes crystal. A
+     faithful explosion would destroy terrain and kill a player in range, which needs damage rules first:
+     SPEC §7 lists explosives as "Later", with "damage/explosion events" as the prerequisite.
+  2. **An original name, the glimmer.** SPEC §1 asks for original terminology.
+  3. **The right-hand rule.** A glimmer is the crawler's mirror image, which is follow-up F-20's "right-hand
+     crawler", and its path tells it apart from a crawler at a glance.
+  4. **A drowned glimmer leaves nothing.** Crystals cannot share a cell with water (D-028), so crystals
+     formed in water would break conservation. It also makes flood-or-crush a real choice.
+  5. **A shattering never harms the player,** in line with D-041's "danger only on contact".
+- **Movement:** right, ahead, left, behind relative to its facing, and the first open cell wins. Otherwise
+  everything is the crawler's: the cadence (`CrawlerIntervalTicks`), catching the player either way,
+  refusing water, drowning, no gravity. Crawlers and glimmers share **one** scan, so of two creatures
+  wanting a cell, the first in row-major order gets it, whichever kind it is.
+- **Shattering:** a **falling** boulder or crystal landing on a glimmer removes it and leaves a crystal in
+  its cell and in every empty, dry floor cell of the 3×3 block around it, in row-major order. Earth,
+  walls, the exit, gates, valves, objects, creatures, the player and wet cells are left alone.
+  - **The object stops** where it was and lands, rather than falling on through as it does after crushing
+    a crawler: the glimmer's cell now holds a crystal.
+  - **At least one crystal:** water drowns a glimmer in the step it arrives, so a glimmer's cell is always
+    dry when gravity runs.
+  - **New crystals rest and sit out the rest of that gravity step,** like a pushed boulder (D-018). No
+    object moves twice in a tick (SPEC §5), and a crystal formed over the player's head cannot crush them
+    on its first step. They fall and roll from the next step.
+  - **Events:** `glimmer-shattered` (object → glimmer), `crystal-formed` for each crystal, then `landed`.
+- **Quota:** a cave may count on up to `ShatterCrystals = 9` crystals per glimmer. That only rules out an
+  exit that could never open; a completion replay shows a cave can be finished.
+- **Events and state:** new events `glimmer-moved`, `glimmer-shattered`, `crystal-formed` and
+  `glimmer-drowned`. `player-caught` now names the creature. Glimmers reuse the facing byte, so the hash
+  layout stays v4; only the rule version changed.
+- **Fixture review:** all eleven earlier golden replays have no glimmers. Traced on master and on this
+  build, they agree on every tick's events and grid; only `rule_version` and the two hashes changed.
+- **Evidence:**
+  - a mirror test: 30 random caves, each run again mirrored with crawlers and glimmers swapped, match
+    tick for tick;
+  - a table of every kind of neighbour, for falling boulders and falling crystals;
+  - randomised runs that check every shattering's crystals and the crystal count;
+  - five mutations, each caught: new crystals not waiting a step, glimmers using the left-hand rule,
+    crystals forming in water, resting objects shattering, and a block that wraps around the cave edge.
+
+## D-046: Cave format version 5
+
+- Rows may contain a glimmer, written as the triangle pointing the way it starts facing: `▲` `▼` `◀` `▶`.
+  Triangles read as facings like the crawler arrows (D-042) and cannot be mistaken for them. Dumps use the
+  same symbols.
+- `required_crystals` may exceed the crystals in the rows by up to 9 per glimmer, matching the simulation.
+  The error for a quota that is too high states the sum.
+- A triangle in a file below version 5 is rejected with the version it needs; older files are unchanged.
+  `cavetool validate` reports glimmer counts.
+
+## D-047: Glimmer Hollow, the example cave
+
+- SPEC §7 again: the example cave is an **extra**, listed after Crawler Warren. It is 30×16 with a quota of
+  7, and has three glimmers, one per lesson:
+  1. **The ring:** a glimmer circles a pillar clockwise, the pillar on its right. Three crystals sit in
+     pockets on its left, safe places to wait while it passes, and the way in is on its left too.
+  2. **The vault:** a glimmer is boxed in under a closed sluice gate, with a boulder resting on the gate
+     between two walls. The vault's valve opens the gate, the boulder drops into it, and on the next
+     gravity step it shatters the glimmer into five crystals. Two rest beside the gate, two fall into a
+     basin, and the fifth stays sealed under the boulder.
+  3. **The flood:** a glimmer paces the corridor to the exit. A second valve drops nine units of water
+     into its middle, which drowns it whatever the timing, leaves no crystals, and settles 1,2,3,2,1, so
+     the player can wade through (D-043's corridor, reused).
+- **Why a vault rather than a pushed boulder.** A pushed boulder catches a glimmer at the same moment
+  only if the glimmer is confined to the column it falls down, and in a one-wide shaft the walls leave
+  room for at most two crystals. Any open floor beside the glimmer is open to the glimmer too, so it would
+  walk off. A boxed-in glimmer stays put, and the four cells diagonal to it can be open floor that it cannot
+  reach. A gate is the one thing that stops a glimmer leaving yet lets a boulder in. **Gravity runs before
+  creatures in every tick,** so the boulder always fills the opened gate before the glimmer could step into
+  it: the vault pays out five crystals whenever it is opened. Its boulder sits between walls, so it cannot
+  be pushed off the gate, which would make the cave impossible.
+- **The quota needs both lessons:** the 5 placed crystals fall short, and so do the 2 outside the ring's
+  pockets plus the 4 vault crystals the player can reach.
+- **Evidence:** a completion replay and a caught-by-a-glimmer replay, both in the 100-run determinism
+  check. Tests also:
+  - follow the ring glimmer round a whole lap, clockwise;
+  - check that the vault glimmer is boxed in and its boulder cannot be pushed;
+  - open the vault on every tick of a 12-tick window: always the same five crystals;
+  - open the sluice at every point of the corridor patrol: always drowned, no crystals, 1,2,3,2,1;
+  - show that the quota needs both lessons and that the corridor is the only way to the exit.
+
+  With the gravity and creature phases swapped, the vault test fails: the glimmer escapes through the gate.
+- **Known way to lose:** digging down into the corridor before opening the sluice lets the corridor
+  glimmer climb out up the player's tunnel, as in Crawler Warren. The sluice valve stands at the top of
+  that tunnel, so flooding first is the natural order.
+
+## D-048: Presenting glimmers
+
+- **Sprite:** an original winged creature drawn in code, with amber wings, a dark body and a cyan crystal
+  shard on its back: the crystals it holds. Its head and knobbed antennae point the way it faces, one
+  drawing turned four ways like the crawler. Wide wings and no legs give it a different outline from the
+  six-legged crawler (checked by the sprite shape test), not only a different colour.
+- **Movement:** glimmers glide over a whole creature interval, like crawlers (D-044). A shattered or drowned
+  glimmer stops being drawn at once, even mid-glide.
+- **Prompts:**
+  - a glimmer cave opens with "Glimmers keep the wall on their right: drop a rock on one for crystals",
+    and a cave with both kinds of creature names both walls;
+  - a shattering says how many crystals it left ("…shattered a glimmer into 5 crystals");
+  - a drowning says the glimmer "left no crystals".
+- **Death screen:** CAUGHT names the creature and the wall it keeps. The caught player is tinted amber for
+  a glimmer and violet for a crawler, and logged replays say which creature caught them.
+- **Sound:** a new cue, a glassy crack and a quick run of high chimes, for a shattering, reported once per
+  tick with the landing thud. Crystals forming make no sound of their own. A drowned glimmer uses the
+  crawler's wet pop, renamed `creature-gone`.
+
+## D-014 addendum: glimmer frames captured (2026-10-25)
+
+- A scratch program, not committed, ran the real `game.Session` and `render.Renderer` in an Ebitengine
+  window under Xvfb with Mesa software GL. It drove both Glimmer Hollow fixtures with the same key-press
+  timing as the session tests, and paused the simulation at chosen ticks to save the frame. Unlike the
+  earlier captures it did not use `exp/vmhost`, and it captured no audio.
+- **Observed:**
+  - the opening prompt and all three glimmers facing their way;
+  - the vault boulder gliding into the opened gate;
+  - the five crystals around it after the shattering, with the "into 5 crystals" prompt;
+  - the two lower crystals resting in the basin;
+  - the corridor flooding, with the drowned-glimmer prompt;
+  - the CAUGHT screen, naming the glimmer and the right-hand wall, with the player drawn shrunk and amber.
+- Linux/OpenGL evidence only, not a Mac test. The shatter cue's sound has not been heard.
