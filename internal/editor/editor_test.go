@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"maps"
 	"math/rand/v2"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -670,9 +671,14 @@ func TestViewAndScrolling(t *testing.T) {
 	if v := e.View(); v.CameraX != 10 || v.CameraY != 8 {
 		t.Fatalf("scrolling should stop at the cave edge: %v,%v", v.CameraX, v.CameraY)
 	}
+	tap(e, Input{Grow: sim.DirRight})
+	if v := e.View(); v.CameraX != 11 {
+		t.Fatalf("growing the visible right edge should keep it in view: camera x %v", v.CameraX)
+	}
+	tap(e, Input{Shrink: sim.DirRight})
 	e.Update(Input{WheelY: 3})
-	if v := e.View(); v.CameraY != 5 {
-		t.Fatalf("wheel up should scroll up three tiles: %v", v.CameraY)
+	if v := e.View(); v.CameraX != 10 || v.CameraY != 5 {
+		t.Fatalf("wheel up should scroll up three tiles: %v,%v", v.CameraX, v.CameraY)
 	}
 	e.Update(over(e, pos(20, 12), Input{}))
 	v = e.View()
@@ -872,6 +878,9 @@ func TestDirStorage(t *testing.T) {
 	}
 	if err := s.Write(path, append(slices.Clone(data), ' '), true); err != nil {
 		t.Fatal(err)
+	}
+	if fi, err := os.Stat(path); err != nil || fi.Mode().Perm() != 0o644 {
+		t.Fatalf("saved cave mode %v, %v; want 0644 like any document", fi.Mode().Perm(), err)
 	}
 	if err := s.Write(filepath.Join(dir, "broken.json"), []byte("{"), false); err != nil {
 		t.Fatal(err)

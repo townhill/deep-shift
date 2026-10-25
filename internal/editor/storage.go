@@ -65,6 +65,10 @@ func (s DirStorage) Write(path string, data []byte, replace bool) error {
 		tmp.Close()
 		return err
 	}
+	if err := tmp.Chmod(0o644); err != nil { // CreateTemp makes it private
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}

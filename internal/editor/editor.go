@@ -496,16 +496,25 @@ func (e *Editor) resize(side sim.Dir, grow bool) {
 		return
 	}
 	// Keep the view on the same cells when the cave grows or shrinks at the
-	// left or top.
+	// left or top, and keep a right or bottom edge in view if it was.
 	step := 1.0
 	if !grow {
 		step = -1
 	}
+	vw, vh := e.layout.ViewTiles()
 	switch side {
 	case sim.DirLeft:
 		e.camX += step
 	case sim.DirUp:
 		e.camY += step
+	case sim.DirRight:
+		if e.camX+vw >= float64(before.width()) {
+			e.camX += step
+		}
+	case sim.DirDown:
+		if e.camY+vh >= float64(before.height()) {
+			e.camY += step
+		}
 	}
 	e.commit(before)
 	e.clampCamera()
