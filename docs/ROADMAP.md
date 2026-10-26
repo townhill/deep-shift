@@ -378,6 +378,9 @@ decisions are D-056 to D-059.
 - [x] App: glimmer sprite by facing, gliding, prompts that count the crystals, CAUGHT naming the creature,
   a shatter cue ([D-059](DECISIONS.md#d-059-presenting-glimmers)); frames checked in a headless capture
   (Linux/OpenGL only; the cue not yet heard)
+- [x] Editor: a glimmer brush on `=`, turned clockwise like the crawler's; the status line counts what a
+  cave's glimmers could leave ([D-060](DECISIONS.md#d-060-a-glimmer-brush-in-the-cave-editor)) (Cloud;
+  a frame captured on Linux)
 - [ ] **Mac:** play Glimmer Hollow (checklist below)
 
 ### Mac playtest checklist for Glimmer Hollow
@@ -395,6 +398,9 @@ Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave gl
   round the boulder, two of them tumbling into the basin, and the prompt "…into 5 crystals"
 - [ ] Turning the sluice valve drowns the corridor glimmer with a pop and "it left no crystals"; you can
   wade to the exit
+- [ ] In the editor (`go run ./cmd/deepshift -edit glimmer_hollow`), = chooses the glimmer brush and = again
+  turns it clockwise; the status line reads "Quota 7 of 5 (+27 from glimmers)"; the bar's help lines are
+  not cut off. Painting a glimmer into a copy of Crawler Warren says the format version was raised to 5
 - [ ] Feel: is the shatter readable and rewarding? Does the sound fit? Should the falling boulder stop on
   the crystals (as now) or fall on through?
 
@@ -434,4 +440,4 @@ Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave gl
 | F-30 | Tune the shattering: how many crystals, and whether the falling object stops on them | Provisional (D-056); needs the Glimmer Hollow Mac playtest |
 | F-31 | Destructive explosions | SPEC §7 "Later". A faithful 3×3 blast that destroys terrain and harms the player was left out of D-056 because it needs damage rules first |
 | F-32 | A visual cue for crystals forming (a brief sparkle), with the reduced-effects option | Crystals simply appear when a glimmer shatters (D-059); the shatter cue carries the moment for now |
-| F-33 | Editor: a glimmer brush | The editor shows and saves glimmers but has no brush for them (every key 1–9, 0, - is taken; D-048), so glimmers are placed in the file for now |
+| F-33 | ~~Editor: a glimmer brush~~ | Done (D-060): the brush is on `=` |
