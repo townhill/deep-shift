@@ -32,6 +32,8 @@ var (
 	boxFillColour = color.NRGBA{60, 200, 210, 50}
 	linkColour    = color.NRGBA{235, 190, 60, 170}
 	selectColour  = color.NRGBA{255, 215, 80, 255}
+	areaColour    = color.NRGBA{255, 255, 255, 230}
+	areaFill      = color.NRGBA{255, 255, 255, 36}
 	shadeColour   = color.NRGBA{0, 0, 0, 150}
 	unknownColour = color.NRGBA{200, 40, 200, 255}
 	panelColour   = color.NRGBA{12, 14, 20, 235}
@@ -42,8 +44,8 @@ const ghostAlpha = 0.55
 
 // DrawEditor renders the cave editor: the status bar, the cave with its
 // grid, the reachability overlay, problem outlines, mechanism links with the
-// selected valve ringed, the brush preview, the palette bar, and the
-// settings panel when it is open.
+// selected valve ringed, the selection, the copy being pasted or the brush
+// preview, the palette bar, and the settings panel when it is open.
 func (r *Renderer) DrawEditor(screen *ebiten.Image, v editor.View) {
 	screen.Fill(backgroundColour)
 	r.drawEditorWorld(v)
@@ -134,6 +136,26 @@ func (r *Renderer) drawEditorWorld(v editor.View) {
 		w, h := float64((v.Box.X1-v.Box.X0+1)*TileSize), float64((v.Box.Y1-v.Box.Y0+1)*TileSize)
 		r.fillRectF(r.world, left, top, w, h, boxFillColour)
 		vector.StrokeRect(r.world, float32(left), float32(top), float32(w), float32(h), 2, boxColour, false)
+	}
+	if v.SelectionOK {
+		left, top := cellPos(v.Selection.X0, v.Selection.Y0)
+		w := float64((v.Selection.X1 - v.Selection.X0 + 1) * TileSize)
+		h := float64((v.Selection.Y1 - v.Selection.Y0 + 1) * TileSize)
+		r.fillRectF(r.world, left, top, w, h, areaFill)
+		vector.StrokeRect(r.world, float32(left), float32(top), float32(w), float32(h), 2, areaColour, false)
+	}
+	if v.Paste != nil && v.HoverOK {
+		// The copy, faint, with its top-left corner on the cell under the
+		// mouse; cells beyond the cave are not drawn.
+		for i, c := range v.Paste {
+			x, y := v.Hover.X+i%v.PasteW, v.Hover.Y+i/v.PasteW
+			if x < v.Width && y < v.Height {
+				left, top := cellPos(x, y)
+				r.drawCell(r.world, c, left, top, ghostAlpha, true)
+			}
+		}
+		left, top := cellPos(v.Hover.X, v.Hover.Y)
+		vector.StrokeRect(r.world, float32(left), float32(top), float32(v.PasteW*TileSize), float32(len(v.Paste)/v.PasteW*TileSize), 1, areaColour, false)
 	}
 	if v.HoverOK {
 		left, top := cellPos(v.Hover.X, v.Hover.Y)

@@ -194,6 +194,9 @@ cave id (edited as a copy) or a cave file (saved back to it).
 | Shift + drag | Fill a box |
 | Cmd + click | Flood-fill the area of matching cells (Cmd + right-click fills it with floor) |
 | Option (Alt) + click | Pick the brush of a cell; on a valve or gate, select its valve and the gate brush |
+| Option (Alt) + drag | Select a rectangle (Cmd+A selects the whole cave; Esc deselects) |
+| Cmd+C / Cmd+X | Copy / cut the selection (cut clears it to floor); Delete or Backspace clears it |
+| Cmd+V | Paste: the copy follows the pointer, and each click places it, until Esc or a right-click |
 | O | Open or close the valve or gate under the pointer, with all its linked gates: how the cave starts |
 | R | Reach overlay on/off: shades what the player cannot reach by walking and digging alone |
 | Arrows / WASD / wheel | Scroll |
@@ -215,6 +218,10 @@ listed as "(cannot play)" and says why.
 **Sluices:** paint a valve (0), then its gates (-): each gate joins the selected valve, ringed in yellow,
 and a line links them. To add gates to another valve, Option-click it first. A valve with no gates, or a
 gate with no valve, is a problem until it is linked. O sets whether a sluice starts open.
+
+**Copy and paste** works within a cave and from one cave to the next opened. A copied valve and its copied
+gates paste as a new sluice of their own, open or shut as copied; a copied gate whose valve was not copied
+joins the selected valve, like a painted gate. A pasted player start or exit moves the cave's own.
 
 **Reach (R)** is a first look at a layout, not a solver: it follows walking and digging only. Falling and
 pushed boulders, turned valves and flowing water can make a cave easier or harder than it shows.

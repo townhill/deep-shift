@@ -23,6 +23,10 @@ type View struct {
 	GhostOK          bool
 	Box              Box // the box a Shift-drag will fill, when BoxOK
 	BoxOK            bool
+	Selection        Box // the selected cells, or those an Alt-drag is selecting, when SelectionOK
+	SelectionOK      bool
+	Paste            []sim.Cell // the copy being pasted, PasteW wide, drawn faintly from Hover; nil when not pasting
+	PasteW           int
 	Problems         []sim.Pos // cells named by validation problems
 	Mechanisms       []sim.Mechanism
 	Linking          sim.Pos // the selected valve, which painted gates join, when LinkingOK
@@ -68,7 +72,20 @@ func (e *Editor) View() View {
 	if s := e.stroke; s != nil && s.box {
 		v.Box, v.BoxOK = boxOf(s.anchor, e.clamp(s.last)), true
 	}
-	if v.HoverOK && !v.BoxOK {
+	v.Selection, v.SelectionOK = e.selection, e.selected
+	if s := e.stroke; s != nil && s.selects {
+		v.Selection, v.SelectionOK = boxOf(s.anchor, e.clamp(s.last)), true
+	}
+	if e.pasting {
+		v.PasteW = e.clip.W
+		for _, row := range e.clip.Rows {
+			for _, r := range row {
+				c, _ := sim.CellForSymbol(r)
+				v.Paste = append(v.Paste, c)
+			}
+		}
+	}
+	if v.HoverOK && !v.BoxOK && !e.pasting && (e.stroke == nil || !e.stroke.selects) {
 		sym := e.symbol()
 		if s := e.stroke; s != nil {
 			sym = s.symbol
@@ -142,6 +159,13 @@ func (e *Editor) hint() string {
 	if e.settings.open {
 		return "Cave settings"
 	}
+	if e.pasting {
+		return fmt.Sprintf("Pasting %d x %d: click to place it, Esc or right-click to stop", e.clip.W, e.clip.H)
+	}
+	if e.selected {
+		b := e.selection
+		return fmt.Sprintf("Selected %d x %d: Cmd+C copy, Cmd+X cut, Delete clear, Esc deselect", b.X1-b.X0+1, b.Y1-b.Y0+1)
+	}
 	brush := fmt.Sprintf("Brush %s: %s", Palette[e.brush].Key, symbolName(e.symbol()))
 	if e.brush == gateBrush {
 		if v := e.selectedValve(); e.doc.mechanismOf(v) >= 0 {
@@ -169,8 +193,8 @@ func (e *Editor) info() []string {
 	switch n := len(e.problems); {
 	case n == 0:
 		lines = append(lines,
-			"No problems: P plays it. Shift-drag: box, Cmd-click: fill, Alt-click: pick/select",
-			"Cmd+Z: undo  G: grid  R: reach  O: open/shut a sluice  Cmd(+Shift)+arrows: resize")
+			"No problems: P plays it. Shift-drag: box, Cmd-click: fill, Alt-drag: select",
+			"Alt-click: pick  Cmd+C/X/V: copy/cut/paste  R: reach  O: open/shut  Cmd+Z: undo")
 	default:
 		describe := func(p level.Problem) string { return p.Field + ": " + p.Msg }
 		lines = append(lines, describe(e.problems[0]))

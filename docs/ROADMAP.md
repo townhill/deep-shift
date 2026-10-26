@@ -313,7 +313,8 @@ replay unchanged.
   (Cloud)
 - [x] Seen in a headless capture (Linux/OpenGL only,
   [D-014 addendum](DECISIONS.md#d-014-addendum-editor-milestone-3-headless-capture-2026-10-25))
-- [ ] Copy and paste: follow-up F-27
+- [x] Copy and paste (F-27): Option-drag selections, Cmd+C/X/V, sluices pasted with their own links, the copy
+  carried between caves ([D-060](DECISIONS.md#d-060-copy-and-paste-follow-up-f-27)) (Cloud)
 - [ ] **Mac:** the checklist below
 
 ### Mac playtest checklist for editor milestone 3
@@ -328,6 +329,9 @@ replay unchanged.
 - [ ] R shades what cannot be reached by walking and digging; the bar's summary matches what you see
 - [ ] Cmd-click fills an area; Cmd-right-click fills it with floor; one Cmd+Z undoes the whole fill. Check
   that Cmd-click is not taken by macOS
+- [ ] Option-drag selects a box (Option-click still picks); Cmd+C, then Cmd+V, and clicks place copies; Esc
+  stops. Cmd+X and Delete clear to floor. Copy a sluice: the pasted one has its own valve and links
+- [ ] Copy in one cave, open another from the edit list, Cmd+V: the copy pastes there
 
 ## Arcade music (owner request; delivered in the cloud, Mac playtest pending)
 
@@ -379,7 +383,7 @@ decisions are D-056 to D-059.
   a shatter cue ([D-059](DECISIONS.md#d-059-presenting-glimmers)); frames checked in a headless capture
   (Linux/OpenGL only; the cue not yet heard)
 - [x] Editor: a glimmer brush on `=`, turned clockwise like the crawler's; the status line counts what a
-  cave's glimmers could leave ([D-060](DECISIONS.md#d-060-a-glimmer-brush-in-the-cave-editor)) (Cloud;
+  cave's glimmers could leave ([D-061](DECISIONS.md#d-061-a-glimmer-brush-in-the-cave-editor)) (Cloud;
   a frame captured on Linux)
 - [ ] **Mac:** play Glimmer Hollow (checklist below)
 
@@ -434,10 +438,10 @@ Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave gl
 | F-24 | ~~Editor milestone 3: valve and gate brushes with linking; a "reachable from the start" overlay; flood fill~~ | Done (D-052 to D-054); copy and paste moved to F-27 |
 | F-25 | Editor: "save as" / rename, metadata editing, and a full, readable problem list | D-048: a cave keeps its first file name, and the bar shows only the first problems |
 | F-26 | Move the headless editor capture into `tools/vmcapture` (F-6) | The editor sessions were scripted by hand (D-014 addendum) |
-| F-27 | Editor: copy and paste a selection, keeping valve and gate links | D-054: needs a selection separate from the box fill, and rules for copied mechanisms |
+| F-27 | ~~Editor: copy and paste a selection, keeping valve and gate links~~ | Done (D-060) |
 | F-28 | A solver-backed reach check that follows the real rules (falling, pushing, valves, water) | D-053: the overlay is walking and digging only |
 | F-29 | More music: a longer loop, or a tune per region or for the title | One 32 s loop (D-055) may wear in long caves; judge in the Mac playtest |
 | F-30 | Tune the shattering: how many crystals, and whether the falling object stops on them | Provisional (D-056); needs the Glimmer Hollow Mac playtest |
 | F-31 | Destructive explosions | SPEC §7 "Later". A faithful 3×3 blast that destroys terrain and harms the player was left out of D-056 because it needs damage rules first |
 | F-32 | A visual cue for crystals forming (a brief sparkle), with the reduced-effects option | Crystals simply appear when a glimmer shatters (D-059); the shatter cue carries the moment for now |
-| F-33 | ~~Editor: a glimmer brush~~ | Done (D-060): the brush is on `=` |
+| F-33 | ~~Editor: a glimmer brush~~ | Done (D-061): the brush is on `=` |

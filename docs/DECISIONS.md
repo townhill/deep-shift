@@ -1198,7 +1198,48 @@ the two meet:
   - the CAUGHT screen, naming the glimmer and the right-hand wall, with the player drawn shrunk and amber.
 - Linux/OpenGL evidence only, not a Mac test. The shatter cue's sound has not been heard.
 
-## D-060: A glimmer brush in the cave editor
+## D-060: Copy and paste (follow-up F-27)
+
+Numbered D-060 because the arcade music (D-055) and the glimmers (D-056 to D-059) reached master first.
+
+- **Selecting.**
+  - Option-drag selects a rectangle. Option-click on a single cell still picks its brush, or selects a
+    valve (D-052), so one modifier serves both, told apart by whether the pointer moved.
+  - Cmd+A selects the whole cave, and Esc deselects (before it would leave).
+  - Delete or Backspace clears the selection to floor.
+  - The selection shrinks with the cave, or goes when nothing of it is left, so it never reaches outside
+    the grid.
+- **Copying.** Cmd+C copies the selection; Cmd+X copies it, then clears it to floor, as one undo step.
+- **Pasting.** Cmd+V shows the copy following the pointer, faint, with its top-left corner on the cell
+  under it.
+  - Each click stamps it, as one undo step, so a pattern can be repeated.
+  - Esc or a right-click stops; choosing a brush, the settings or a playtest stops it too.
+  - Cells past the cave's edge are left out.
+- **What a paste does:**
+  - **Plain symbols** are painted as a brush paints them, so a pasted player start or exit moves the cave's
+    own.
+  - **A copied sluice** (a valve whose copy holds it) becomes a new mechanism among the pasted cells: the
+    pasted valve gets a mechanism of its own and its copied gates join it, even while another valve is
+    selected. It keeps the open or shut state it was copied with.
+  - **A copied gate whose valve was not copied** joins the selected valve, as a painted gate does, or stays
+    unlinked and reported. A valve copied without its gates pastes with none, also reported.
+  - So pasting keeps every mechanism valid in the same way painting does. The random-input invariants
+    (D-052) now include copying, cutting, pasting, selecting all and clearing.
+- **Across caves.** The copy is kept by the shell, so it can be pasted into the next cave opened in the
+  editor. It is not the system clipboard, and it lasts until the app quits.
+
+## D-014 addendum: copy-and-paste headless capture (2026-10-25)
+
+- The by-hand `exp/vmhost` setup (Linux, Xvfb, Mesa software GL; nothing committed) drove `-edit cave_04`:
+  - Option-drag selected the sluice (3 × 6), with "Selected 3 x 6: Cmd+C copy…" in the bar;
+  - after Cmd+C and Cmd+V (Control under the driver), the copy followed the pointer;
+  - a click placed a second sluice, linked to its own valve;
+  - Cmd+X cut an area to floor; it held the player start, so "no player start" was reported, as it should
+    be.
+- **One fault found and fixed:** the bar still said "Pasting" after Esc ended paste mode.
+- This is Linux/OpenGL evidence only, not a Mac test.
+
+## D-061: A glimmer brush in the cave editor
 
 - **Key:** the glimmer brush is the twelfth palette slot, on `=`, the key after `-` on the number row.
   Like WASD, it is a physical position, so it stays in place on other layouts. It comes last, so every

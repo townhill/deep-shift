@@ -327,7 +327,7 @@ func readEditorInput() editor.Input {
 		Settings:  pressed(ebiten.KeyTab),
 		Back:      pressed(ebiten.KeyEscape),
 		Enter:     pressed(ebiten.KeyEnter) || pressed(ebiten.KeyNumpadEnter),
-		Backspace: repeating(ebiten.KeyBackspace),
+		Backspace: repeating(ebiten.KeyBackspace) || pressed(ebiten.KeyDelete),
 	}
 	arrows := map[ebiten.Key]sim.Dir{
 		ebiten.KeyArrowUp: sim.DirUp, ebiten.KeyArrowDown: sim.DirDown,
@@ -337,6 +337,8 @@ func readEditorInput() editor.Input {
 		in.Undo = pressed(ebiten.KeyZ) && !shift
 		in.Redo = pressed(ebiten.KeyZ) && shift || pressed(ebiten.KeyY)
 		in.Save = pressed(ebiten.KeyS)
+		in.Copy, in.Cut, in.Paste = pressed(ebiten.KeyC), pressed(ebiten.KeyX), pressed(ebiten.KeyV)
+		in.SelectAll = pressed(ebiten.KeyA)
 		for k, d := range arrows {
 			switch {
 			case pressed(k) && shift:
