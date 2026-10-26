@@ -8,9 +8,8 @@ browser, Electron, server or database.
 The game takes design inspiration from the *rules-driven* arcade cave games of the 1980s. All of its code,
 caves, art, names and rules are original to this project.
 
-> **Status: Phases 0–4, Phase 5's creatures and the first milestone of the cave editor delivered in the
-> cloud: a five-cave vertical slice, crawlers, glimmers and an editor, all still needing their Mac
-> playtest.** Movement, digging, crystals, walls and a quota-sealed exit, plus:
+> **Status: Phases 0–4, Phase 5's creatures and the cave editor delivered in the cloud: a five-cave
+> vertical slice, crawlers, glimmers and an editor, all still needing their Mac playtest.** Movement, digging, crystals, walls and a quota-sealed exit, plus:
 >
 > - **gravity:** boulders and crystals fall, roll and crush, and boulders can be pushed;
 > - **water:** it falls and spreads, is conserved exactly, and is too deep to wade when a cell is full;
@@ -31,7 +30,9 @@ caves, art, names and rules are original to this project.
 >
 > There's a title menu and a cave list, pause/restart, a HUD, sound effects, arcade music, a performance
 > overlay, and automatic replays of finished attempts. A **cave editor** paints, validates, saves and
-> playtests caves, and the caves you make appear in the cave list under "My caves". Progress is not saved between runs. See [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
+> playtests caves, with sluices, flood fill, a reach overlay and copy and paste, and the caves you make
+> appear in the cave list under "My caves". Progress is not saved between runs. See
+> [docs/ROADMAP.md](docs/ROADMAP.md) and the rules in [docs/PHYSICS.md](docs/PHYSICS.md).
 
 ## What has and has not been verified
 
