@@ -791,7 +791,7 @@ func randomInput(rng *rand.Rand) Input {
 		Cmd:  rng.IntN(12) == 0,
 		Left: rng.IntN(10) == 0, Right: rng.IntN(10) == 0, Up: rng.IntN(10) == 0, Down: rng.IntN(10) == 0,
 	}
-	switch rng.IntN(44) {
+	switch rng.IntN(50) {
 	case 0:
 		in.Brush = 1 + rng.IntN(len(Palette))
 	case 1:
@@ -818,6 +818,16 @@ func randomInput(rng *rand.Rand) Input {
 		in.Reach = true
 	case 13: // the valve and gate brushes, more often than chance
 		in.Brush = len(Palette) - rng.IntN(2)
+	case 14:
+		in.Copy = true
+	case 15:
+		in.Cut = true
+	case 16, 17:
+		in.Paste = true
+	case 18:
+		in.SelectAll = true
+	case 19:
+		in.Backspace = true
 	}
 	return in
 }
