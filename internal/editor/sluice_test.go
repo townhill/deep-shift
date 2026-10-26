@@ -271,14 +271,14 @@ func TestReachOverlay(t *testing.T) {
 	}
 }
 
-// cmd/deepshift maps the keys 1-9, 0 and - to the brushes in this order.
+// cmd/deepshift maps the keys 1-9, 0, - and = to the brushes in this order.
 func TestPaletteKeys(t *testing.T) {
 	var keys []string
 	for _, b := range Palette {
 		keys = append(keys, b.Key)
 	}
-	if got := strings.Join(keys, ""); got != "1234567890-" {
-		t.Fatalf("palette keys %q, want 1234567890- to match cmd/deepshift's brushKeys", got)
+	if got := strings.Join(keys, ""); got != "1234567890-=" {
+		t.Fatalf("palette keys %q, want 1234567890-= to match cmd/deepshift's brushKeys", got)
 	}
 	if Palette[gateBrush].Variants[0] != sim.SymbolGateClosed {
 		t.Fatal("gateBrush is not the gate brush")

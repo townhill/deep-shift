@@ -296,6 +296,7 @@ func readControls() game.Controls {
 var brushKeys = [...]ebiten.Key{
 	ebiten.KeyDigit1, ebiten.KeyDigit2, ebiten.KeyDigit3, ebiten.KeyDigit4, ebiten.KeyDigit5,
 	ebiten.KeyDigit6, ebiten.KeyDigit7, ebiten.KeyDigit8, ebiten.KeyDigit9, ebiten.KeyDigit0, ebiten.KeyMinus,
+	ebiten.KeyEqual,
 }
 
 // readEditorInput samples the mouse and keyboard for the cave editor. Cmd or

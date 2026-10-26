@@ -189,7 +189,7 @@ cave id (edited as a copy) or a cave file (saved back to it).
 
 | Input | Action |
 |---|---|
-| 1–9, 0, - | Choose a brush: wall, earth, floor, crystal, boulder, player start, exit, water, crawler, valve, gate. Press again for the next variant (shallower water, the crawler turned clockwise). Clicking a palette slot does the same. |
+| 1–9, 0, -, = | Choose a brush: wall, earth, floor, crystal, boulder, player start, exit, water, crawler, valve, gate, glimmer. Press again for the next variant (shallower water, the crawler or glimmer turned clockwise). Clicking a palette slot does the same. |
 | Left drag | Paint. The player start and the exit move rather than duplicate. A valve becomes the selected valve; gates join the selected valve. |
 | Right drag | Erase to floor |
 | Shift + drag | Fill a box |

@@ -1238,3 +1238,27 @@ Numbered D-060 because the arcade music (D-055) and the glimmers (D-056 to D-059
     be.
 - **One fault found and fixed:** the bar still said "Pasting" after Esc ended paste mode.
 - This is Linux/OpenGL evidence only, not a Mac test.
+
+## D-061: A glimmer brush in the cave editor
+
+- **Key:** the glimmer brush is the twelfth palette slot, on `=`, the key after `-` on the number row.
+  Like WASD, it is a physical position, so it stays in place on other layouts. It comes last, so every
+  earlier brush keeps its key and its number.
+- **Variants:** `▲` `▶` `▼` `◀`. Pressing `=` again turns the glimmer clockwise, like the crawler brush,
+  and Alt-click picks a glimmer back with its facing.
+- **Format version:** painting a glimmer into an older cave raises it to version 5 and says replays of the
+  old version will not match (D-047); undo lowers it again.
+- **Quota:** the status line and the settings panel add the most a cave's glimmers could leave to its
+  crystal count ("Quota 7 of 5 (+27 from glimmers)"), so a quota that counts on them (D-056) does not
+  look impossible. The reach overlay still counts only placed crystals: shattering, like falling and
+  flowing, is not part of its walk (D-053).
+- **Room in the bar:** a twelfth slot at the old 40-pixel pitch cut the bar's two help lines short. The
+  pitch is now 37 pixels, as tight as the selection frame (3 pixels outside a tile) allows, so the text has
+  the 82 characters it had with eleven slots. A test checks that the help lines fit beside the palette,
+  and fails at the old pitch.
+- **Evidence:** editor tests for the key, turning, painting, picking, naming, the version raised and lowered,
+  the quota note (mutation-checked) and the help line fit. The randomised editor test now paints glimmers
+  too, and its valve-and-gate case names those two brushes instead of "the last two". A scratch program
+  captured the editor on Glimmer Hollow under Xvfb: twelve slots, the glimmer slot selected, the quota
+  note and the whole help text. Linux/OpenGL only; the `=` key itself (`cmd/deepshift`'s key list) is not
+  exercised by any test and needs the Mac check in the ROADMAP.
