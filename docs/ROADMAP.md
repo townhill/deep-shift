@@ -154,8 +154,8 @@ Run `go run ./cmd/deepshift` with no flags, or open the CI-built `.app`. Record 
 pause and menu screens, your macOS version and chip, and your display's refresh rate.
 
 - [ ] The title menu appears; arrows choose, Space/Enter select; "Play the campaign" starts cave 01
-- [ ] The cave list shows caves 1–5 and the extras (Crawler Warren and the Proving Ground); Esc goes back;
-  a cave you finish shows "(done)"
+- [ ] The cave list shows caves 1–5 and the extras (Crawler Warren, Glimmer Hollow and the Proving Ground);
+  Esc goes back; a cave you finish shows "(done)"
 - [ ] Choosing a cave with Enter never moves the player or turns a valve on arrival
 - [ ] In each cave: finish it; lose it where possible (cave 01 has no way to lose); restart with R; reach
   the cave list with C
@@ -361,6 +361,47 @@ Run `go run ./cmd/deepshift` with no flags.
 - [ ] `-no-music` starts silent until B is pressed
 - [ ] Feel: is it pleasant over a long cave, or wearing? Is the tempo right? Too loud or too quiet?
 
+## Phase 5 (continued) — glimmers, the shattering creature (delivered in the cloud; Mac playtest pending)
+
+The owner asked for the 1984 game's "rock on a butterfly makes diamonds" and chose the recommended design
+([D-056](DECISIONS.md#d-056-glimmers-and-shattering-rule-version-5-owner-decisions)). Rule version 5; the
+decisions are D-056 to D-059.
+
+- [x] A second creature, the **glimmer**: the crawler's mirror image (right-hand rule), sharing its
+  cadence, scan, catching and drowning. A falling object shatters it into resting crystals in every empty,
+  dry floor cell of the 3×3 block around it; a drowned one leaves nothing. Mirror test, a table of every
+  kind of neighbour, randomised invariants, five mutations caught (Cloud)
+- [x] The eleven earlier golden replays are unchanged except their hashes, shown by trace diffs against
+  master (Cloud)
+- [x] Cave format version 5 writes glimmers as triangles; a quota may count on 9 crystals per glimmer
+  ([D-057](DECISIONS.md#d-057-cave-format-version-5)) (Cloud)
+- [x] An example cave, Glimmer Hollow, an extra: a ring patrol, a vault whose boulder always shatters its
+  glimmer into five crystals, and a sluice that drowns the third. Completion and death replays, both in the
+  100-run determinism check, and timing sweeps
+  ([D-058](DECISIONS.md#d-058-glimmer-hollow-the-example-cave)) (Cloud)
+- [x] App: glimmer sprite by facing, gliding, prompts that count the crystals, CAUGHT naming the creature,
+  a shatter cue ([D-059](DECISIONS.md#d-059-presenting-glimmers)); frames checked in a headless capture
+  (Linux/OpenGL only; the cue not yet heard)
+- [ ] **Mac:** play Glimmer Hollow (checklist below)
+
+### Mac playtest checklist for Glimmer Hollow
+
+Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave glimmer_hollow`.
+
+- [ ] The opening prompt says glimmers keep the wall on their right
+- [ ] Three amber, winged glimmers, each facing the way it goes; they look nothing like crawlers or
+  crystals
+- [ ] The ring glimmer goes round its pillar clockwise and never enters the pockets beside it; you can
+  wait in a pocket while it passes
+- [ ] Stepping into a glimmer's path gets you caught: CAUGHT, a bite sound, "they keep the wall on their
+  right", and you shrink and turn amber. Walking into one says "You walked into a glimmer". R restarts
+- [ ] Turning the vault valve drops the boulder onto the boxed glimmer: a chime, five crystals in an X
+  round the boulder, two of them tumbling into the basin, and the prompt "…into 5 crystals"
+- [ ] Turning the sluice valve drowns the corridor glimmer with a pop and "it left no crystals"; you can
+  wade to the exit
+- [ ] Feel: is the shatter readable and rewarding? Does the sound fit? Should the falling boulder stop on
+  the crystals (as now) or fall on through?
+
 ## Follow-ups
 
 | ID | Follow-up | Why |
@@ -384,7 +425,7 @@ Run `go run ./cmd/deepshift` with no flags.
 | F-17 | Volume control beyond mute, with separate music and effects levels | SPEC §4 accessibility; M and B only toggle (D-038, D-055) |
 | F-18 | Reduce-motion option for the water easing and glides | SPEC §4 accessibility, with F-8 |
 | F-19 | Tune `CrawlerIntervalTicks` | Provisional (D-041); needs the Crawler Warren Mac playtest |
-| F-20 | Crawlers in campaign caves, and more kinds (a right-hand crawler, a fixed patrol) | Crawler Warren is the only cave with them; SPEC §8's regions call for creatures |
+| F-20 | Creatures in campaign caves, and more kinds (a fixed patrol) | The right-hand kind, the glimmer, is done (D-056); the example caves are the only ones with creatures, and SPEC §8's regions call for them |
 | F-21 | An audible cue for a nearby crawler | Walking crawlers are silent (D-044), so a threat out of view cannot be heard; needs care not to become noise |
 | F-22 | Remaining Phase 5 items: structural supports, local preferences, a visual theme | SPEC §11 Phase 5; not started (D-040). The editor's first milestone is done (D-045) |
 | F-23 | ~~Editor milestone 2: your caves in the cave list ("My caves"); replays of playtests of saved, unchanged caves~~ | Done (D-050, D-051) |
@@ -394,3 +435,7 @@ Run `go run ./cmd/deepshift` with no flags.
 | F-27 | ~~Editor: copy and paste a selection, keeping valve and gate links~~ | Done (D-060) |
 | F-28 | A solver-backed reach check that follows the real rules (falling, pushing, valves, water) | D-053: the overlay is walking and digging only |
 | F-29 | More music: a longer loop, or a tune per region or for the title | One 32 s loop (D-055) may wear in long caves; judge in the Mac playtest |
+| F-30 | Tune the shattering: how many crystals, and whether the falling object stops on them | Provisional (D-056); needs the Glimmer Hollow Mac playtest |
+| F-31 | Destructive explosions | SPEC §7 "Later". A faithful 3×3 blast that destroys terrain and harms the player was left out of D-056 because it needs damage rules first |
+| F-32 | A visual cue for crystals forming (a brief sparkle), with the reduced-effects option | Crystals simply appear when a glimmer shatters (D-059); the shatter cue carries the moment for now |
+| F-33 | Editor: a glimmer brush | The editor shows and saves glimmers but has no brush for them (every key 1–9, 0, - is taken; D-048), so glimmers are placed in the file for now |

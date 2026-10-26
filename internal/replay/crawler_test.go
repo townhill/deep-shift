@@ -19,7 +19,14 @@ var (
 // before, idles up to tick until, and returns the simulation there.
 func warrenAt(t *testing.T, before, until uint64) *sim.Sim {
 	t.Helper()
-	r := loadFixture(t, "crawler_warren_complete.json")
+	return fixtureAt(t, "crawler_warren_complete.json", before, until)
+}
+
+// fixtureAt replays the named fixture's commands that come before tick
+// before, idles up to tick until, and returns the simulation there.
+func fixtureAt(t *testing.T, name string, before, until uint64) *sim.Sim {
+	t.Helper()
+	r := loadFixture(t, name)
 	l := freshCave(t, r.CaveID)
 	s, err := sim.New(l.Cave(), r.Seed)
 	if err != nil {
@@ -44,17 +51,24 @@ func warrenAt(t *testing.T, before, until uint64) *sim.Sim {
 // kind k.
 func eventTick(t *testing.T, k sim.EventKind) uint64 {
 	t.Helper()
-	r := loadFixture(t, "crawler_warren_complete.json")
+	return fixtureEventTick(t, "crawler_warren_complete.json", func(e sim.Event) bool { return e.Kind == k })
+}
+
+// fixtureEventTick returns the tick of the named fixture's first event that
+// matches.
+func fixtureEventTick(t *testing.T, name string, match func(sim.Event) bool) uint64 {
+	t.Helper()
+	r := loadFixture(t, name)
 	tick, found := uint64(0), false
 	if _, err := RunObserved(r, freshCave(t, r.CaveID), func(n uint64, events []sim.Event, _ *sim.Sim) {
-		if !found && countKind(events, k) > 0 {
+		if !found && slices.ContainsFunc(events, match) {
 			tick, found = n, true
 		}
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if !found {
-		t.Fatalf("no %s event", k)
+		t.Fatalf("%s: no matching event", name)
 	}
 	return tick
 }

@@ -9,7 +9,7 @@ type Sim struct {
 	seed    uint64
 	exits   []Pos // exit cells in row-major order; terrain never changes
 	st      state
-	updated []bool  // gravity and crawler scratch: cells whose occupant already moved this step
+	updated []bool  // gravity and creature scratch: cells whose occupant already moved this step
 	pushed  int     // index of the boulder pushed this tick, or -1
 	level   []uint8 // water scratch: levels the spread is computed from
 }
@@ -76,10 +76,10 @@ func (s *Sim) Step(in Input) []Event {
 		if s.st.tick%GravityIntervalTicks == 0 {
 			events = s.stepGravity(events)
 			if s.st.tick%CrawlerIntervalTicks == 0 {
-				events = s.stepCrawlers(events)
+				events = s.stepCreatures(events)
 			}
 			s.stepWater()
-			events = s.drownCrawlers(events)
+			events = s.drownCreatures(events)
 		}
 		if s.st.status == StatusPlaying {
 			events = s.stepQuota(events)
@@ -121,10 +121,10 @@ func (s *Sim) stepPlayer(in Input, events []Event) []Event {
 	if dst.Deep() {
 		return append(events, Event{Tick: st.tick, Kind: EventTooDeep, Pos: to})
 	}
-	if dst.Occupant == OccupantCrawler {
-		// Walking into a crawler is fatal; the player does not move.
+	if dst.Occupant.Creature() {
+		// Walking into a creature is fatal; the player does not move.
 		st.status = StatusDead
-		return append(events, Event{Tick: st.tick, Kind: EventPlayerCaught, Pos: st.player, From: to})
+		return append(events, Event{Tick: st.tick, Kind: EventPlayerCaught, Pos: st.player, From: to, Object: dst.Occupant})
 	}
 
 	// A boulder can only be pushed: horizontally, while resting, one cell into
@@ -203,10 +203,10 @@ func (s *Sim) stepGravity(events []Event) []Event {
 	return events
 }
 
-// updateFalling applies, in order: fall into empty floor below; crush the
-// player below if already falling; roll off a rounded blocker (left side
-// first, then right) when the side cell and the cell below it are both
-// empty; otherwise come to rest.
+// updateFalling applies, in order: fall into empty floor below; if already
+// falling, crush the player or a crawler below, or shatter a glimmer below;
+// roll off a rounded blocker (left side first, then right) when the side cell
+// and the cell below it are both empty; otherwise come to rest.
 func (s *Sim) updateFalling(p Pos, events []Event) []Event {
 	st := &s.st
 	o := &st.cells[s.initial.Index(p)]
@@ -230,6 +230,13 @@ func (s *Sim) updateFalling(p Pos, events []Event) []Event {
 			return append(events,
 				Event{Tick: st.tick, Kind: EventCrawlerCrushed, Pos: below, From: p, Object: obj},
 				Event{Tick: st.tick, Kind: EventFell, Pos: below, From: p, Object: obj})
+		case bc.Occupant == OccupantGlimmer && o.Falling:
+			// A falling object shatters a glimmer into crystals and comes to
+			// rest on them.
+			o.Falling = false
+			events = append(events, Event{Tick: st.tick, Kind: EventGlimmerShattered, Pos: below, From: p, Object: obj})
+			events = s.shatter(below, events)
+			return append(events, Event{Tick: st.tick, Kind: EventLanded, Pos: p, Object: obj})
 		case bc.Occupant.Rounded():
 			for _, d := range [...]Dir{DirLeft, DirRight} {
 				side := p.Add(d)
@@ -248,69 +255,119 @@ func (s *Sim) updateFalling(p Pos, events []Event) []Event {
 	return events
 }
 
-// stepCrawlers is the crawler phase, after gravity on CrawlerIntervalTicks
-// ticks. Crawlers are scanned row by row from the top, each row left to
-// right, and each moves at most once: a cell a crawler moved into is skipped
-// if the scan reaches it again.
+// stepCreatures is the creature phase, after gravity on CrawlerIntervalTicks
+// ticks. Crawlers and glimmers are scanned together, row by row from the top,
+// each row left to right, and each moves at most once: a cell a creature
+// moved into is skipped if the scan reaches it again.
 //
 // A crawler follows the wall on its left: it tries the directions left of
-// its facing, ahead, right and behind, in that order, and takes the first
-// that is open to it (see Cell.OpenToCrawler). If that cell holds the player,
-// it catches them instead of moving. With every direction blocked it stays.
-func (s *Sim) stepCrawlers(events []Event) []Event {
+// its facing, ahead, right and behind, in that order. A glimmer is its mirror
+// image and follows the wall on its right: right, ahead, left, behind. Each
+// takes the first direction open to it (see Cell.OpenToCreature). If that
+// cell holds the player, it catches them instead of moving. With every
+// direction blocked it stays.
+func (s *Sim) stepCreatures(events []Event) []Event {
 	clear(s.updated)
 	w := s.initial.Width
 	for i := range s.st.cells {
-		if s.st.cells[i].Occupant != OccupantCrawler || s.updated[i] || s.st.status != StatusPlaying {
+		if !s.st.cells[i].Occupant.Creature() || s.updated[i] || s.st.status != StatusPlaying {
 			continue
 		}
-		events = s.updateCrawler(Pos{i % w, i / w}, events)
+		events = s.updateCreature(Pos{i % w, i / w}, events)
 	}
 	return events
 }
 
-// turns lists, for each facing, the directions a crawler tries: its left,
-// ahead, its right, behind.
-var turns = [...][4]Dir{
+// leftTurns lists, for each facing, the directions a crawler tries: its
+// left, ahead, its right, behind.
+var leftTurns = [...][4]Dir{
 	DirUp:    {DirLeft, DirUp, DirRight, DirDown},
 	DirDown:  {DirRight, DirDown, DirLeft, DirUp},
 	DirLeft:  {DirDown, DirLeft, DirUp, DirRight},
 	DirRight: {DirUp, DirRight, DirDown, DirLeft},
 }
 
-func (s *Sim) updateCrawler(p Pos, events []Event) []Event {
+// rightTurns lists, for each facing, the directions a glimmer tries: its
+// right, ahead, its left, behind.
+var rightTurns = [...][4]Dir{
+	DirUp:    {DirRight, DirUp, DirLeft, DirDown},
+	DirDown:  {DirLeft, DirDown, DirRight, DirUp},
+	DirLeft:  {DirUp, DirLeft, DirDown, DirRight},
+	DirRight: {DirDown, DirRight, DirUp, DirLeft},
+}
+
+func (s *Sim) updateCreature(p Pos, events []Event) []Event {
 	st := &s.st
 	c := &st.cells[s.initial.Index(p)]
-	for _, d := range turns[c.Facing] {
+	kind, moved, turns := c.Occupant, EventCrawlerMoved, leftTurns[c.Facing]
+	if kind == OccupantGlimmer {
+		moved, turns = EventGlimmerMoved, rightTurns[c.Facing]
+	}
+	for _, d := range turns {
 		to := p.Add(d)
 		if !s.initial.InBounds(to) {
 			continue
 		}
 		dst := &st.cells[s.initial.Index(to)]
-		if !dst.OpenToCrawler() {
+		if !dst.OpenToCreature() {
 			continue
 		}
 		c.Facing = d
 		if dst.Occupant == OccupantPlayer {
 			st.status = StatusDead
-			return append(events, Event{Tick: st.tick, Kind: EventPlayerCaught, Pos: to, From: p})
+			return append(events, Event{Tick: st.tick, Kind: EventPlayerCaught, Pos: to, From: p, Object: kind})
 		}
-		dst.Occupant, dst.Facing = OccupantCrawler, d
+		dst.Occupant, dst.Facing = kind, d
 		c.Occupant, c.Facing = OccupantNone, DirNone
 		s.updated[s.initial.Index(to)] = true
-		return append(events, Event{Tick: st.tick, Kind: EventCrawlerMoved, Pos: to, From: p, Object: OccupantCrawler})
+		return append(events, Event{Tick: st.tick, Kind: moved, Pos: to, From: p, Object: kind})
 	}
 	return events
 }
 
-// drownCrawlers removes every crawler whose cell holds water after the water
-// phase, in row-major order.
-func (s *Sim) drownCrawlers(events []Event) []Event {
+// drownCreatures removes every crawler and glimmer whose cell holds water
+// after the water phase, in row-major order. A drowned glimmer leaves no
+// crystals.
+func (s *Sim) drownCreatures(events []Event) []Event {
 	w := s.initial.Width
 	for i := range s.st.cells {
-		if c := &s.st.cells[i]; c.Occupant == OccupantCrawler && c.Water > 0 {
-			c.Occupant, c.Facing = OccupantNone, DirNone
-			events = append(events, Event{Tick: s.st.tick, Kind: EventCrawlerDrowned, Pos: Pos{i % w, i / w}})
+		c := &s.st.cells[i]
+		if !c.Occupant.Creature() || c.Water == 0 {
+			continue
+		}
+		kind := EventCrawlerDrowned
+		if c.Occupant == OccupantGlimmer {
+			kind = EventGlimmerDrowned
+		}
+		c.Occupant, c.Facing = OccupantNone, DirNone
+		events = append(events, Event{Tick: s.st.tick, Kind: kind, Pos: Pos{i % w, i / w}})
+	}
+	return events
+}
+
+// shatter removes the glimmer at g and leaves a crystal in its cell and in
+// every empty, dry floor cell of the 3×3 block around it, in row-major
+// order. Nothing else in the block changes: earth, walls, the exit, gates,
+// valves, objects, creatures, the player and cells holding water are left as
+// they are, so water is conserved. A glimmer's cell is always dry (water
+// drowns it in the step it arrives), so at least one crystal forms. The new
+// crystals rest and sit out the rest of this gravity step, like a pushed
+// boulder.
+func (s *Sim) shatter(g Pos, events []Event) []Event {
+	c := &s.st.cells[s.initial.Index(g)]
+	c.Occupant, c.Facing = OccupantNone, DirNone
+	for y := g.Y - 1; y <= g.Y+1; y++ {
+		for x := g.X - 1; x <= g.X+1; x++ {
+			p := Pos{x, y}
+			if !s.initial.InBounds(p) {
+				continue
+			}
+			i := s.initial.Index(p)
+			if cell := &s.st.cells[i]; cell.Empty() && cell.Water == 0 {
+				cell.Occupant = OccupantCrystal
+				s.updated[i] = true
+				events = append(events, Event{Tick: s.st.tick, Kind: EventCrystalFormed, Pos: p})
+			}
 		}
 	}
 	return events
@@ -473,6 +530,17 @@ func (s *Sim) Crawlers() int {
 	n := 0
 	for _, c := range s.st.cells {
 		if c.Occupant == OccupantCrawler {
+			n++
+		}
+	}
+	return n
+}
+
+// Glimmers returns the number of glimmers in the cave.
+func (s *Sim) Glimmers() int {
+	n := 0
+	for _, c := range s.st.cells {
+		if c.Occupant == OccupantGlimmer {
 			n++
 		}
 	}

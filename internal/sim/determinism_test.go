@@ -82,19 +82,21 @@ func TestStateHashIsSensitiveToEveryStateComponent(t *testing.T) {
 	add("crawler facing up", s)
 	s.st.cells[s.Cave().Index(Pos{3, 1})].Facing = DirLeft
 	add("crawler facing left", s)
+	s.st.cells[s.Cave().Index(Pos{3, 1})].Occupant = OccupantGlimmer
+	add("glimmer facing left", s)
 }
 
 // Golden hashes pin the hash byte layout. If this test fails, the encoding or
 // a rule changed: bump RuleVersion or the hash magic deliberately, document
 // it, and review every replay fixture rather than regenerating blindly.
-// Last re-pinned for rule version 4 / hash layout v4 (facing byte per cell);
-// see docs/DECISIONS.md D-040.
+// Last re-pinned for rule version 5 (glimmers); the hash layout is still v4
+// (facing byte per cell, D-041).
 func TestStateHashGolden(t *testing.T) {
 	s, err := New(caveFromRows(t, 1, "#####", "#@.*E", "#####"), 42)
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantStart = "e442f162897fdb68ea4810efcdaeb248d05203ba071bdae67fe4ac37fcb60fd0"
+	const wantStart = "7473ffe36e4f49133523844551c10c3e7fea14a2b8fa89690c10798b22997aac"
 	if got := s.StateHash().String(); got != wantStart {
 		t.Errorf("tick 0 hash = %s, want %s", got, wantStart)
 	}
@@ -104,16 +106,16 @@ func TestStateHashGolden(t *testing.T) {
 	if s.Status() != StatusComplete {
 		t.Fatalf("status = %s, want complete", s.Status())
 	}
-	const wantEnd = "8773610fd32cba96ff9c7fe68cd9e6424fcb3932391b30a413cd122d4652d0aa"
+	const wantEnd = "a8bd33d757a7b00017c0914131a48a7744212c09b806ff815651dc27af2b6f87"
 	if got := s.StateHash().String(); got != wantEnd {
 		t.Errorf("completed hash = %s, want %s", got, wantEnd)
 	}
 }
 
 // randomCave builds a bordered cave from rng with exactly one player, one
-// exit, water, crawlers (none within three cells of the player start), and
-// two valves (one beside the player start) each linked to a few gates. It is
-// test-only and makes no solvability promise.
+// exit, water, crawlers and glimmers (none within three cells of the player
+// start), and two valves (one beside the player start) each linked to a few
+// gates. It is test-only and makes no solvability promise.
 func randomCave(rng *SplitMix64, w, h int) Cave {
 	c := Cave{Width: w, Height: h, Cells: make([]Cell, w*h)}
 	for y := range h {
@@ -138,6 +140,8 @@ func randomCave(rng *SplitMix64, w, h int) Cave {
 				// No extra draw, so the rest of the cave matches the
 				// pre-crawler layout for the same seed.
 				cell.Occupant, cell.Facing = OccupantCrawler, Dir(1+(x+y)%4)
+			case r == 19 && x+y > 5:
+				cell.Occupant, cell.Facing = OccupantGlimmer, Dir(1+(x+y)%4)
 			}
 		}
 	}
@@ -169,14 +173,17 @@ func randomCave(rng *SplitMix64, w, h int) Cave {
 	return c
 }
 
-func checkInvariants(s *Sim, initialCrystals, initialBoulders, lastCollected, initialWater int) error {
+// checkInvariants checks s after a tick. crystals is the number of crystals
+// the cave has held: those placed in it plus those formed by shattered
+// glimmers so far.
+func checkInvariants(s *Sim, crystals, initialBoulders, lastCollected, initialWater int) error {
 	players := 0
 	for i, c := range s.st.cells {
-		if (c.Occupant == OccupantCrawler) != (c.Facing != DirNone) || c.Facing > DirRight {
+		if c.Occupant.Creature() != (c.Facing != DirNone) || c.Facing > DirRight {
 			return fmt.Errorf("%s facing %s at index %d", c.Occupant, c.Facing, i)
 		}
-		if c.Occupant == OccupantCrawler && (!c.Terrain.Floor() || c.Water > 0) {
-			return fmt.Errorf("crawler on %s terrain with %d water at index %d", c.Terrain, c.Water, i)
+		if c.Occupant.Creature() && (!c.Terrain.Floor() || c.Water > 0) {
+			return fmt.Errorf("%s on %s terrain with %d water at index %d", c.Occupant, c.Terrain, c.Water, i)
 		}
 		if c.Falling && !c.Occupant.Falls() {
 			return fmt.Errorf("falling flag on %s at index %d", c.Occupant, i)
@@ -206,8 +213,8 @@ func checkInvariants(s *Sim, initialCrystals, initialBoulders, lastCollected, in
 	if !s.Cave().InBounds(s.Player()) {
 		return fmt.Errorf("player out of bounds at %s", s.Player())
 	}
-	if got := s.Collected() + countOccupant(s, OccupantCrystal); got != initialCrystals {
-		return fmt.Errorf("crystals not conserved: %d collected + remaining, want %d", got, initialCrystals)
+	if got := s.Collected() + countOccupant(s, OccupantCrystal); got != crystals {
+		return fmt.Errorf("crystals not conserved: %d collected + remaining, want %d placed + formed", got, crystals)
 	}
 	if s.Collected() < lastCollected {
 		return fmt.Errorf("collected count decreased from %d to %d", lastCollected, s.Collected())
@@ -234,16 +241,23 @@ func checkInvariants(s *Sim, initialCrystals, initialBoulders, lastCollected, in
 	return nil
 }
 
-// checkMoveEvents verifies one tick's object and crawler movement: falls go
-// exactly one cell down, rolls and pushes one cell sideways, crawlers one
+// checkMoveEvents verifies one tick's object and creature movement: falls go
+// exactly one cell down, rolls and pushes one cell sideways, creatures one
 // cell in any direction, and nothing moves twice (no move starts where an
 // earlier move in the same tick ended, and no two moves share a start or an
-// end).
+// end). A crystal formed by a shattered glimmer counts as having moved, so it
+// may not move again in the same tick.
 func checkMoveEvents(events []Event) error {
 	starts, ends := map[Pos]bool{}, map[Pos]bool{}
 	for _, e := range events {
 		var dx, dy int
 		switch e.Kind {
+		case EventCrystalFormed:
+			if ends[e.Pos] {
+				return fmt.Errorf("%v: a crystal formed where an object moved this tick", e)
+			}
+			ends[e.Pos] = true
+			continue
 		case EventFell:
 			dx, dy = 0, 1
 		case EventRolled, EventBoulderPushed:
@@ -251,7 +265,7 @@ func checkMoveEvents(events []Event) error {
 			if dx != 1 && dx != -1 {
 				return fmt.Errorf("%v is not one cell sideways", e)
 			}
-		case EventCrawlerMoved:
+		case EventCrawlerMoved, EventGlimmerMoved:
 			dx, dy = e.Pos.X-e.From.X, e.Pos.Y-e.From.Y
 			if dx*dx+dy*dy != 1 {
 				return fmt.Errorf("%v is not one cell", e)
@@ -270,10 +284,38 @@ func checkMoveEvents(events []Event) error {
 	return nil
 }
 
+// checkShatters verifies one tick's shattered glimmers: each glimmer-shattered
+// is followed by the crystals it formed, all inside the 3×3 block around the
+// glimmer and one in the glimmer's own cell, and then by the shattering
+// object landing where it was.
+func checkShatters(events []Event) error {
+	for i, e := range events {
+		if e.Kind != EventGlimmerShattered {
+			continue
+		}
+		j, own := i+1, false
+		for ; j < len(events) && events[j].Kind == EventCrystalFormed; j++ {
+			p := events[j].Pos
+			if p.X < e.Pos.X-1 || p.X > e.Pos.X+1 || p.Y < e.Pos.Y-1 || p.Y > e.Pos.Y+1 {
+				return fmt.Errorf("%v formed a crystal outside its block at %s", e, p)
+			}
+			own = own || p == e.Pos
+		}
+		if !own {
+			return fmt.Errorf("%v left no crystal in the glimmer's cell", e)
+		}
+		if j == len(events) || events[j].Kind != EventLanded || events[j].Pos != e.From || events[j].Object != e.Object {
+			return fmt.Errorf("%v: the shattering %s did not land at %s", e, e.Object, e.From)
+		}
+	}
+	return nil
+}
+
 // Seeded randomised runs: invariants hold after every tick, and two runs of
 // the same inputs agree on every tick's hash. The seed is in every failure.
 func TestRandomisedRunsKeepInvariantsAndDeterminism(t *testing.T) {
 	const ticks = 3000
+	shatters := 0
 	for seed := uint64(1); seed <= 20; seed++ {
 		t.Run(strconv.FormatUint(seed, 10), func(t *testing.T) {
 			caveRNG := NewSplitMix64(seed)
@@ -288,7 +330,8 @@ func TestRandomisedRunsKeepInvariantsAndDeterminism(t *testing.T) {
 			initialWater := a.Water()
 			inputRNG := NewSplitMix64(seed ^ 0xdeadbeef)
 			lastCollected, turns := 0, 0
-			crawlers := a.Crawlers()
+			crawlers, glimmers := a.Crawlers(), a.Glimmers()
+			crystals := initialCrystals
 			seen := map[EventKind]int{}
 			for tick := range ticks {
 				// One input in six is Interact, so valves near the player's
@@ -304,19 +347,27 @@ func TestRandomisedRunsKeepInvariantsAndDeterminism(t *testing.T) {
 						turns++
 					case EventCrawlerCrushed, EventCrawlerDrowned:
 						crawlers--
+					case EventGlimmerShattered, EventGlimmerDrowned:
+						glimmers--
+					case EventCrystalFormed:
+						crystals++
 					case EventPlayerCaught:
 						if a.Status() != StatusDead {
 							t.Fatalf("seed %d tick %d: caught but %s", seed, tick, a.Status())
 						}
 					}
 				}
-				if a.Crawlers() != crawlers {
-					t.Fatalf("seed %d tick %d: %d crawlers, want %d after removals\n%s", seed, tick, a.Crawlers(), crawlers, a.ASCII())
+				if a.Crawlers() != crawlers || a.Glimmers() != glimmers {
+					t.Fatalf("seed %d tick %d: %d crawlers and %d glimmers, want %d and %d after removals\n%s",
+						seed, tick, a.Crawlers(), a.Glimmers(), crawlers, glimmers, a.ASCII())
 				}
 				if err := checkMoveEvents(ev); err != nil {
 					t.Fatalf("seed %d tick %d: %v\n%s", seed, tick, err, a.ASCII())
 				}
-				if err := checkInvariants(a, initialCrystals, initialBoulders, lastCollected, initialWater); err != nil {
+				if err := checkShatters(ev); err != nil {
+					t.Fatalf("seed %d tick %d: %v\n%s", seed, tick, err, a.ASCII())
+				}
+				if err := checkInvariants(a, crystals, initialBoulders, lastCollected, initialWater); err != nil {
 					t.Fatalf("seed %d tick %d: %v\n%s", seed, tick, err, a.ASCII())
 				}
 				lastCollected = a.Collected()
@@ -324,9 +375,16 @@ func TestRandomisedRunsKeepInvariantsAndDeterminism(t *testing.T) {
 					t.Fatalf("seed %d tick %d: identical runs diverged", seed, tick)
 				}
 			}
-			t.Logf("seed %d: %d valve turns, %d water units, %d crawler moves, %d crushed, %d drowned, final status %s at tick %d",
-				seed, turns, initialWater, seen[EventCrawlerMoved], seen[EventCrawlerCrushed], seen[EventCrawlerDrowned], a.Status(), a.Tick())
+			shatters += seen[EventGlimmerShattered]
+			t.Logf("seed %d: %d valve turns, %d water units, %d crawler moves, %d crushed, %d drowned; "+
+				"%d glimmer moves, %d shattered into %d crystals, %d drowned; final status %s at tick %d",
+				seed, turns, initialWater, seen[EventCrawlerMoved], seen[EventCrawlerCrushed], seen[EventCrawlerDrowned],
+				seen[EventGlimmerMoved], seen[EventGlimmerShattered], seen[EventCrystalFormed], seen[EventGlimmerDrowned],
+				a.Status(), a.Tick())
 		})
+	}
+	if shatters == 0 {
+		t.Error("no glimmer was shattered in any run, so the shatter invariants were never exercised")
 	}
 }
 

@@ -84,8 +84,8 @@ func symbolName(r rune) string {
 	case sim.SymbolValveOpen:
 		return "open valve"
 	}
-	if c, ok := sim.CellForSymbol(r); ok && c.Occupant == sim.OccupantCrawler {
-		return "crawler facing " + c.Facing.String()
+	if c, ok := sim.CellForSymbol(r); ok && c.Occupant.Creature() {
+		return c.Occupant.String() + " facing " + c.Facing.String()
 	}
 	return fmt.Sprintf("unknown symbol %q", r)
 }
