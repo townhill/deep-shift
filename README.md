@@ -42,7 +42,7 @@ caves, art, names and rules are original to this project.
 | Gravity: boulders and crystals fall, roll (left first) and crush; boulders push (no chains); at most one move per tick | `go test ./...`, randomised invariant runs, golden fixtures | Verified on Linux; CI runs them on macOS arm64 |
 | Water: falls then spreads with no left/right bias, conserved every tick, contained by every barrier, displaced by objects; gates and valves | `go test ./...` (hand-computed cases, mirror test, randomised invariants), cave 04 fixture | Verified on Linux; CI runs them on macOS arm64 |
 | Crawlers: left-hand rule, one move per step, catching both ways, crushed by falling objects only, drowned by water, reset | `go test ./...` (hand-computed paths, randomised invariants, mutation-checked), Crawler Warren fixtures and timing sweeps | Verified on Linux; CI runs them on macOS arm64 |
-| Glimmers: right-hand rule (the exact mirror of a crawler), shattering into crystals in empty dry floor only, new crystals waiting a step, the player spared, drowning leaving nothing | `go test ./...` (mirror test, a table of every kind of neighbour, randomised invariants, mutation-checked), Glimmer Hollow fixtures and timing sweeps | Verified on Linux; CI runs them on macOS arm64 |
+| Glimmers: right-hand rule (the exact mirror of a crawler), shattering into crystals in empty dry floor only (a shattering boulder turning to crystal too), new crystals waiting a step, the player spared, drowning leaving nothing | `go test ./...` (mirror test, a table of every kind of neighbour, randomised invariants, mutation-checked), Glimmer Hollow fixtures and timing sweeps | Verified on Linux; CI runs them on macOS arm64 |
 | Determinism: 100 identical runs → identical hashes at every tick, including deaths by crush, by crawler and by glimmer, a reservoir drain, a boulder pushed through water, crawlers crushed and drowned, and glimmers shattered and drowned | `internal/replay` test + golden fixtures | Verified (Linux); CI checks the same golden hashes on macOS arm64 |
 | Every cave can be completed; cave 05 has two distinct routes; cave 01 cannot hurt the player | Golden replays plus tests on each route's events and water state | Verified (Linux); CI runs them on macOS arm64 |
 | Menus: title, cave list, keys that chose an entry never leak into the game | `internal/game` shell tests; headless capture | Verified (Linux) |
@@ -169,7 +169,8 @@ restarts.
   left.
 - It catches you exactly like a crawler, and standing next to one is just as safe.
 - Something **falling** onto a glimmer shatters it: its cell and every empty, dry cell around it fill with
-  crystals. A shattering never hurts you, and nothing but empty floor is changed.
+  crystals, and a falling boulder turns to crystal too. A shattering never hurts you, and nothing but empty
+  floor and that boulder is changed.
 - The new crystals fall and roll from the next moment. One that forms right on top of you just rests there,
   but one with a gap below it falls, and a falling crystal crushes.
 - A drowned glimmer leaves no crystals.
@@ -279,7 +280,7 @@ docs/                 SPEC, ROADMAP, DECISIONS, PHYSICS
 ## Documentation
 
 - [docs/SPEC.md](docs/SPEC.md) — the game design and technical specification (source of truth)
-- [docs/PHYSICS.md](docs/PHYSICS.md) — the rules as actually implemented (rule version 5)
+- [docs/PHYSICS.md](docs/PHYSICS.md) — the rules as actually implemented (rule version 6)
 - [docs/DECISIONS.md](docs/DECISIONS.md) — decisions and deviations, with rationale
 - [docs/ROADMAP.md](docs/ROADMAP.md) — phase status, playtest checklist and follow-ups
 - [CLAUDE.md](CLAUDE.md) — working rules for coding agents

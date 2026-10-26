@@ -89,14 +89,14 @@ func TestStateHashIsSensitiveToEveryStateComponent(t *testing.T) {
 // Golden hashes pin the hash byte layout. If this test fails, the encoding or
 // a rule changed: bump RuleVersion or the hash magic deliberately, document
 // it, and review every replay fixture rather than regenerating blindly.
-// Last re-pinned for rule version 5 (glimmers); the hash layout is still v4
-// (facing byte per cell, D-041).
+// Last re-pinned for rule version 6 (shattering boulders turn to crystal);
+// the hash layout is still v4 (facing byte per cell, D-041).
 func TestStateHashGolden(t *testing.T) {
 	s, err := New(caveFromRows(t, 1, "#####", "#@.*E", "#####"), 42)
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantStart = "7473ffe36e4f49133523844551c10c3e7fea14a2b8fa89690c10798b22997aac"
+	const wantStart = "d47c4a52f6f4de53658c2fa810ea4bf90d5c15f02c712f8c5484fc24b4ca4de0"
 	if got := s.StateHash().String(); got != wantStart {
 		t.Errorf("tick 0 hash = %s, want %s", got, wantStart)
 	}
@@ -106,7 +106,7 @@ func TestStateHashGolden(t *testing.T) {
 	if s.Status() != StatusComplete {
 		t.Fatalf("status = %s, want complete", s.Status())
 	}
-	const wantEnd = "a8bd33d757a7b00017c0914131a48a7744212c09b806ff815651dc27af2b6f87"
+	const wantEnd = "1518d386ac50359a1f5aa6353915b351e91de3b927aca2d252f6ed07cec48e1f"
 	if got := s.StateHash().String(); got != wantEnd {
 		t.Errorf("completed hash = %s, want %s", got, wantEnd)
 	}
@@ -175,8 +175,9 @@ func randomCave(rng *SplitMix64, w, h int) Cave {
 
 // checkInvariants checks s after a tick. crystals is the number of crystals
 // the cave has held: those placed in it plus those formed by shattered
-// glimmers so far.
-func checkInvariants(s *Sim, crystals, initialBoulders, lastCollected, initialWater int) error {
+// glimmers so far. boulders is those placed less those that shattered a
+// glimmer and turned to crystal.
+func checkInvariants(s *Sim, crystals, boulders, lastCollected, initialWater int) error {
 	players := 0
 	for i, c := range s.st.cells {
 		if c.Occupant.Creature() != (c.Facing != DirNone) || c.Facing > DirRight {
@@ -219,8 +220,8 @@ func checkInvariants(s *Sim, crystals, initialBoulders, lastCollected, initialWa
 	if s.Collected() < lastCollected {
 		return fmt.Errorf("collected count decreased from %d to %d", lastCollected, s.Collected())
 	}
-	if got := s.Boulders(); got != initialBoulders {
-		return fmt.Errorf("boulders not conserved: %d, want %d", got, initialBoulders)
+	if got := s.Boulders(); got != boulders {
+		return fmt.Errorf("boulders not conserved: %d, want %d less those shattered", got, boulders)
 	}
 	if got := s.Water(); got != initialWater {
 		return fmt.Errorf("water not conserved: %d units, want %d", got, initialWater)
@@ -286,26 +287,31 @@ func checkMoveEvents(events []Event) error {
 
 // checkShatters verifies one tick's shattered glimmers: each glimmer-shattered
 // is followed by the crystals it formed, all inside the 3×3 block around the
-// glimmer and one in the glimmer's own cell, and then by the shattering
-// object landing where it was.
+// glimmer, one in the glimmer's own cell, and one in a shattering boulder's
+// cell (a shattering crystal stays a crystal, so none forms there). Nothing
+// lands.
 func checkShatters(events []Event) error {
 	for i, e := range events {
 		if e.Kind != EventGlimmerShattered {
 			continue
 		}
-		j, own := i+1, false
+		j, own, object := i+1, false, false
 		for ; j < len(events) && events[j].Kind == EventCrystalFormed; j++ {
 			p := events[j].Pos
 			if p.X < e.Pos.X-1 || p.X > e.Pos.X+1 || p.Y < e.Pos.Y-1 || p.Y > e.Pos.Y+1 {
 				return fmt.Errorf("%v formed a crystal outside its block at %s", e, p)
 			}
 			own = own || p == e.Pos
+			object = object || p == e.From
 		}
 		if !own {
 			return fmt.Errorf("%v left no crystal in the glimmer's cell", e)
 		}
-		if j == len(events) || events[j].Kind != EventLanded || events[j].Pos != e.From || events[j].Object != e.Object {
-			return fmt.Errorf("%v: the shattering %s did not land at %s", e, e.Object, e.From)
+		if object != (e.Object == OccupantBoulder) {
+			return fmt.Errorf("%v: crystal formed in the %s's cell: %v", e, e.Object, object)
+		}
+		if j < len(events) && events[j].Kind == EventLanded && events[j].Pos == e.From {
+			return fmt.Errorf("%v: the shattering %s landed", e, e.Object)
 		}
 	}
 	return nil
@@ -331,7 +337,7 @@ func TestRandomisedRunsKeepInvariantsAndDeterminism(t *testing.T) {
 			inputRNG := NewSplitMix64(seed ^ 0xdeadbeef)
 			lastCollected, turns := 0, 0
 			crawlers, glimmers := a.Crawlers(), a.Glimmers()
-			crystals := initialCrystals
+			crystals, boulders := initialCrystals, initialBoulders
 			seen := map[EventKind]int{}
 			for tick := range ticks {
 				// One input in six is Interact, so valves near the player's
@@ -349,6 +355,9 @@ func TestRandomisedRunsKeepInvariantsAndDeterminism(t *testing.T) {
 						crawlers--
 					case EventGlimmerShattered, EventGlimmerDrowned:
 						glimmers--
+						if e.Kind == EventGlimmerShattered && e.Object == OccupantBoulder {
+							boulders--
+						}
 					case EventCrystalFormed:
 						crystals++
 					case EventPlayerCaught:
@@ -367,7 +376,7 @@ func TestRandomisedRunsKeepInvariantsAndDeterminism(t *testing.T) {
 				if err := checkShatters(ev); err != nil {
 					t.Fatalf("seed %d tick %d: %v\n%s", seed, tick, err, a.ASCII())
 				}
-				if err := checkInvariants(a, crystals, initialBoulders, lastCollected, initialWater); err != nil {
+				if err := checkInvariants(a, crystals, boulders, lastCollected, initialWater); err != nil {
 					t.Fatalf("seed %d tick %d: %v\n%s", seed, tick, err, a.ASCII())
 				}
 				lastCollected = a.Collected()

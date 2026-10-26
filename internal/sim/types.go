@@ -15,7 +15,8 @@ import "fmt"
 //     crushed by falling objects and drown in water.
 //   - 5: glimmers, creatures that follow the wall on their right and shatter
 //     into crystals when a falling object lands on them.
-const RuleVersion uint32 = 5
+//   - 6: a boulder that shatters a glimmer turns to crystal too.
+const RuleVersion uint32 = 6
 
 // TicksPerSecond is the provisional logical simulation rate (SPEC §5).
 const TicksPerSecond = 20
@@ -42,7 +43,8 @@ const CrawlerIntervalTicks = 6
 const WaterCapacity = 4
 
 // ShatterCrystals is the most crystals one shattered glimmer can leave: one
-// for each cell of the 3×3 block around it.
+// for each cell of the 3×3 block around it, the shattering boulder's
+// included.
 const ShatterCrystals = 9
 
 // MaxDimension bounds cave width and height.

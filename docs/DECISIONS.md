@@ -1279,3 +1279,37 @@ Numbered D-060 because the arcade music (D-055) and the glimmers (D-056 to D-059
   mutations were each caught: the key changed to `+`, the variants turned anticlockwise, and
   `level.SymbolVersion` no longer counting glimmers as version 5.
 - Linux/OpenGL evidence only, not a Mac test.
+
+## D-062: Tuning the shattering (rule version 6, owner decisions)
+
+- **Request (owner, 2026-10-26):** tune the shattering (F-30), which D-056 had left to the Glimmer Hollow
+  Mac playtest. With no playtest yet, the owner chose from the options directly:
+  1. **The falling object is part of the shattering.** A boulder that shatters a glimmer turns to crystal
+     with the rest of the block. Its cell is inside the 3×3 block, as in the 1984 game. A crystal that
+     shatters one stays a crystal and comes to rest. The other options were to keep the object resting on
+     top (as in D-056) or to let it fall on through into the glimmer's cell, as after crushing a crawler.
+  2. **The cells that fill are unchanged:** empty, dry floor only, so nothing is destroyed and the player is
+     never harmed. Turning earth to crystal too, or filling only a plus shape, were the alternatives.
+- **What it changes:**
+  - A shattering can now leave the full `ShatterCrystals = 9`; it was 8 at most while the object kept its
+    cell. The quota bound (D-057) already counted 9 per glimmer.
+  - Nothing lands any more. The events are `glimmer-shattered`, then a `crystal-formed` for each new crystal,
+    the boulder's cell included, in row-major order. A falling crystal makes no `crystal-formed` (it is
+    not a new crystal), so crystal counts stay exact.
+  - With nothing landing, a shattering no longer comes with the landing thud: the shatter cue (D-059) plays
+    alone, and the prompt counts the boulder's crystal ("…into 6 crystals" in Glimmer Hollow).
+  - The shattering boulder no longer sits on the crystal below it, so in Glimmer Hollow nothing is sealed in
+    the vault: all six of its crystals can be taken, the two in the gate and the glimmer's cell by the slot
+    above the gate. The quota rises from 7 to 9, so the vault and the ring are both still needed: the 5
+    placed crystals fall short, and so do the 2 outside the ring's pockets plus all 6 from the vault. The
+    completion replay now takes all eleven.
+- **Replays:** the rule version and Glimmer Hollow's checksum changed, so every fixture is re-pinned.
+  Traced before and after, twelve of the thirteen agree on every tick's events and grid, the Glimmer
+  Hollow death replay included. The Glimmer Hollow completion replay was re-recorded on the longer route.
+- **Evidence:** the shattering table now expects the boulder's cell to fill and a falling crystal to rest.
+  The randomised runs check that every boulder shattering forms a crystal in the boulder's cell and every
+  crystal shattering does not, and they count boulders less those that shattered. Two mutations are caught:
+  leaving the boulder in place, and forming a falling crystal a second time. The Glimmer Hollow tests now
+  expect six vault crystals, a route that collects all of them, and no boulder left.
+- **Unchanged:** the cells that fill, drowning leaving nothing, and the timing (new crystals still sit out
+  the rest of the gravity step).

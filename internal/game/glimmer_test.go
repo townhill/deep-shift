@@ -62,8 +62,8 @@ func TestGlimmerPromptsAndSounds(t *testing.T) {
 		prompt string
 		cue    sfx.Cue
 	}{
-		{550, "A falling boulder shattered a glimmer into 5 crystals", sfx.CueShatter},
-		{658, "The water drowned a glimmer: it left no crystals", sfx.CueCreatureGone},
+		{550, "A falling boulder shattered a glimmer into 6 crystals", sfx.CueShatter},
+		{682, "The water drowned a glimmer: it left no crystals", sfx.CueCreatureGone},
 	} {
 		s.TakeCues()
 		driveFixtureUntil(t, s, fixture, tt.after+1)
@@ -90,7 +90,8 @@ func TestOpeningPromptForBothCreatures(t *testing.T) {
 // A glimmer shattered while still gliding into its cell stops being drawn
 // at once, like a crushed crawler: the boulder falls into (1,1) and the
 // glimmer steps into (1,2) below it on tick 0, and the boulder lands on it on
-// tick 2, a third of the way through its glide.
+// tick 2, a third of the way through its glide. The boulder turns to crystal
+// with the glimmer's cell and the cell it left.
 func TestShatteredGlimmerStopsGliding(t *testing.T) {
 	s, err := NewSession(tinyCave(t,
 		"#O###@",
@@ -112,7 +113,7 @@ func TestShatteredGlimmerStopsGliding(t *testing.T) {
 			t.Fatalf("the shattered glimmer is still drawn gliding: %+v", g)
 		}
 	}
-	if p := s.HUD().Prompt; p != "A falling boulder shattered a glimmer into 2 crystals" {
+	if p := s.HUD().Prompt; p != "A falling boulder shattered a glimmer into 3 crystals" {
 		t.Fatalf("prompt %q", p)
 	}
 }
