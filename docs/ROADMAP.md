@@ -314,7 +314,7 @@ replay unchanged.
 - [x] Seen in a headless capture (Linux/OpenGL only,
   [D-014 addendum](DECISIONS.md#d-014-addendum-editor-milestone-3-headless-capture-2026-10-25))
 - [x] Copy and paste (F-27): Option-drag selections, Cmd+C/X/V, sluices pasted with their own links, the copy
-  carried between caves ([D-056](DECISIONS.md#d-056-copy-and-paste-follow-up-f-27)) (Cloud)
+  carried between caves ([D-060](DECISIONS.md#d-060-copy-and-paste-follow-up-f-27)) (Cloud)
 - [ ] **Mac:** the checklist below
 
 ### Mac playtest checklist for editor milestone 3
@@ -391,6 +391,6 @@ Run `go run ./cmd/deepshift` with no flags.
 | F-24 | ~~Editor milestone 3: valve and gate brushes with linking; a "reachable from the start" overlay; flood fill~~ | Done (D-052 to D-054); copy and paste moved to F-27 |
 | F-25 | Editor: "save as" / rename, metadata editing, and a full, readable problem list | D-048: a cave keeps its first file name, and the bar shows only the first problems |
 | F-26 | Move the headless editor capture into `tools/vmcapture` (F-6) | The editor sessions were scripted by hand (D-014 addendum) |
-| F-27 | ~~Editor: copy and paste a selection, keeping valve and gate links~~ | Done (D-056) |
+| F-27 | ~~Editor: copy and paste a selection, keeping valve and gate links~~ | Done (D-060) |
 | F-28 | A solver-backed reach check that follows the real rules (falling, pushing, valves, water) | D-053: the overlay is walking and digging only |
 | F-29 | More music: a longer loop, or a tune per region or for the title | One 32 s loop (D-055) may wear in long caves; judge in the Mac playtest |

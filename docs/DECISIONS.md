@@ -1074,7 +1074,9 @@ the two meet:
 - **No text notice outside caves and playtests:** in the editor, as on the menus, M and B change the sound
   without a message.
 
-## D-056: Copy and paste (follow-up F-27)
+## D-060: Copy and paste (follow-up F-27)
+
+Numbered D-060 because the arcade music (D-055) and the glimmers (D-056 to D-059) reached master first.
 
 - **Selecting.**
   - Option-drag selects a rectangle. Option-click on a single cell still picks its brush, or selects a
