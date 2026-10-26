@@ -1262,3 +1262,20 @@ Numbered D-060 because the arcade music (D-055) and the glimmers (D-056 to D-059
   captured the editor on Glimmer Hollow under Xvfb: twelve slots, the glimmer slot selected, the quota
   note and the whole help text. Linux/OpenGL only; the `=` key itself (`cmd/deepshift`'s key list) is not
   exercised by any test and needs the Mac check in the ROADMAP.
+
+## D-014 addendum: the glimmer brush through the real key (2026-10-26)
+
+- D-061 noted that the `=` key itself, `cmd/deepshift`'s key list, was exercised by no test. A second,
+  independent session built the same brush and drove the unmodified app under `exp/vmhost` (Linux, Xvfb,
+  Mesa software GL; the driver copied into the ignored `.vmdriver/`, nothing committed) with `-edit new`,
+  pressing `ebiten.KeyEqual` through the real key wiring:
+  - `=` ringed the twelfth slot with "Brush =: glimmer facing up" and a glimmer preview under the pointer;
+  - `=` again read "glimmer facing right"; a click painted it, with "unsaved" in the status;
+  - a Shift-drag filled a 4×3 box with twelve glimmers facing down; Alt-click on the first glimmer picked
+    "glimmer facing right"; a click on the slot turned it to "facing down".
+- That session's tests were kept as extras beside D-061's: the full clockwise cycle and the slot click,
+  a glimmer painted into a version 4 cave saving as version 5 and loading with `level.Parse`, Alt-click on
+  all four facings, a box and a flood fill of glimmers, and a reach row with both creatures. Three
+  mutations were each caught: the key changed to `+`, the variants turned anticlockwise, and
+  `level.SymbolVersion` no longer counting glimmers as version 5.
+- Linux/OpenGL evidence only, not a Mac test.
