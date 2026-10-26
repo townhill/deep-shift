@@ -272,7 +272,7 @@ func TestReachOverlay(t *testing.T) {
 	}
 }
 
-// cmd/deepshift maps the keys 1-9, 0 and - to the brushes in this order.
+// cmd/deepshift maps the keys 1-9, 0, - and = to the brushes in this order.
 func TestPaletteKeys(t *testing.T) {
 	var keys []string
 	for _, b := range Palette {

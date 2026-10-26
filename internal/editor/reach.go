@@ -14,15 +14,14 @@ type reach struct {
 // reachable searches from every player start in cells (a grid w wide).
 //
 //   - Entered: open floor and open gates, unless the water there is deep;
-//     earth (dug); crystals (collected); crawlers and glimmers (they move
-//     on).
+//     earth (dug); crystals (collected); crawlers and glimmers (they move on).
 //   - Blocked: walls, closed gates, valves, deep water, boulders and cells
 //     with unknown symbols.
 //   - The exit is reached but not passed: entering it ends the cave.
 //
-// Boulders falling or being pushed, valves being turned and water flowing
-// are not considered, so a cave can be solvable when this says it is not,
-// and the reverse.
+// Boulders falling or being pushed, valves being turned, water flowing and
+// glimmers shattering into crystals are not considered, so a cave can be
+// solvable when this says it is not, and the reverse.
 func reachable(cells []sim.Cell, unknown []bool, w int) reach {
 	var r reach
 	var queue []int

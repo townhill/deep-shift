@@ -382,6 +382,9 @@ decisions are D-056 to D-059.
 - [x] App: glimmer sprite by facing, gliding, prompts that count the crystals, CAUGHT naming the creature,
   a shatter cue ([D-059](DECISIONS.md#d-059-presenting-glimmers)); frames checked in a headless capture
   (Linux/OpenGL only; the cue not yet heard)
+- [x] Editor: a glimmer brush on `=`, turned clockwise like the crawler's; the status line counts what a
+  cave's glimmers could leave ([D-061](DECISIONS.md#d-061-a-glimmer-brush-in-the-cave-editor)) (Cloud;
+  a frame captured on Linux)
 - [ ] **Mac:** play Glimmer Hollow (checklist below)
 
 ### Mac playtest checklist for Glimmer Hollow
@@ -399,40 +402,11 @@ Choose it under Extras in the cave list, or run `go run ./cmd/deepshift -cave gl
   round the boulder, two of them tumbling into the basin, and the prompt "…into 5 crystals"
 - [ ] Turning the sluice valve drowns the corridor glimmer with a pop and "it left no crystals"; you can
   wade to the exit
+- [ ] In the editor (`go run ./cmd/deepshift -edit glimmer_hollow`), = chooses the glimmer brush and = again
+  turns it clockwise; the status line reads "Quota 7 of 5 (+27 from glimmers)"; the bar's help lines are
+  not cut off. Painting a glimmer into a copy of Crawler Warren says the format version was raised to 5
 - [ ] Feel: is the shatter readable and rewarding? Does the sound fit? Should the falling boulder stop on
   the crystals (as now) or fall on through?
-
-## Phase 5 (continued) — the editor's glimmer brush (follow-up F-33; delivered in the cloud, Mac playtest pending)
-
-The decision is D-061. No rule or format change: rule version 5, cave format version 5, and every golden
-replay unchanged.
-
-- [x] A twelfth brush, **Glimmer**, on `=` after the gate. Pressing `=` again, or clicking its slot, turns it
-  clockwise: ▲ ▶ ▼ ◀. Option-click on a glimmer picks the brush with that facing; boxes and flood fills
-  place one in every cell; painting one into an older cave raises its format version to 5, and the saved
-  cave loads in the game. Three mutations caught: the key, the variant order and the version bump
-  ([D-061](DECISIONS.md#d-061-the-glimmer-brush-follow-up-f-33)) (Cloud)
-- [x] The reach overlay enters glimmer cells as it does crawlers' (they move on), now stated and tested
-  (Cloud)
-- [x] Seen in a headless capture (Linux/OpenGL only,
-  [D-014 addendum](DECISIONS.md#d-014-addendum-glimmer-brush-headless-capture-2026-10-26)): the slot, the
-  preview, a painted glimmer, a box of them, and the Option-click pick
-- [ ] **Mac:** the checklist below
-
-### Mac playtest checklist for the glimmer brush
-
-- [ ] In `-edit new`, `=` chooses the Glimmer brush (the twelfth slot, after the gate) facing up; pressing
-  `=` again turns it right, down, left and back to up, and clicking the slot does the same; the bar reads
-  "Brush =: glimmer facing …"
-- [ ] The glimmer preview shows under the pointer, and a painted glimmer looks like the ones in Glimmer
-  Hollow
-- [ ] Option-click on a painted glimmer picks the Glimmer brush with that facing
-- [ ] Painting a glimmer into a copy of Crawler Warren says "Format version raised to 5 …"; P then
-  playtests it, with the glimmer keeping the wall on its right
-- [ ] On a keyboard other than US (British, German, French): which key chooses the brush? Ebitengine's
-  `KeyEqual` is the key to the right of `-` on a US layout, so on other layouts it may carry a different
-  label. Note what it is, and that clicking the slot still works
-- [ ] The bottom bar still shows the problem list beside the twelve slots, with its end clipped as before
 
 ## Follow-ups
 
@@ -470,4 +444,4 @@ replay unchanged.
 | F-30 | Tune the shattering: how many crystals, and whether the falling object stops on them | Provisional (D-056); needs the Glimmer Hollow Mac playtest |
 | F-31 | Destructive explosions | SPEC §7 "Later". A faithful 3×3 blast that destroys terrain and harms the player was left out of D-056 because it needs damage rules first |
 | F-32 | A visual cue for crystals forming (a brief sparkle), with the reduced-effects option | Crystals simply appear when a glimmer shatters (D-059); the shatter cue carries the moment for now |
-| F-33 | ~~Editor: a glimmer brush~~ | Done (D-061): the Glimmer brush is on `=` |
+| F-33 | ~~Editor: a glimmer brush~~ | Done (D-061): the brush is on `=` |
