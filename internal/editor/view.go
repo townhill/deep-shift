@@ -110,18 +110,29 @@ func (e *Editor) status() string {
 	if e.Dirty() {
 		state += ", unsaved"
 	}
-	return fmt.Sprintf("EDIT %s  %dx%d  Quota %d of %d  %s",
-		string(title), e.doc.width(), e.doc.height(), e.doc.quota, e.crystals(), state)
+	return fmt.Sprintf("EDIT %s  %dx%d  Quota %d of %d%s  %s",
+		string(title), e.doc.width(), e.doc.height(), e.doc.quota, e.crystals(), e.shardNote(), state)
 }
 
-func (e *Editor) crystals() int {
+func (e *Editor) crystals() int { return e.count(sim.OccupantCrystal) }
+
+func (e *Editor) count(o sim.Occupant) int {
 	n := 0
 	for _, c := range e.cells {
-		if c.Occupant == sim.OccupantCrystal {
+		if c.Occupant == o {
 			n++
 		}
 	}
 	return n
+}
+
+// shardNote adds, after the crystal count, the most crystals the cave's
+// glimmers could leave when shattered, which a quota may count on (D-056).
+func (e *Editor) shardNote() string {
+	if g := e.count(sim.OccupantGlimmer); g > 0 {
+		return fmt.Sprintf(" (+%d from glimmers)", sim.ShatterCrystals*g)
+	}
+	return ""
 }
 
 func (e *Editor) hint() string {
@@ -198,7 +209,7 @@ func (e *Editor) settingsLines() []Line {
 		{Text: "Title  " + value(fieldTitle), Selected: s.cursor == fieldTitle},
 		{Text: "Id     " + value(fieldID), Selected: s.cursor == fieldID},
 		{Text: "Seed   " + value(fieldSeed), Selected: s.cursor == fieldSeed},
-		{Text: fmt.Sprintf("Quota  %s of %d crystals", value(fieldQuota), e.crystals()), Selected: s.cursor == fieldQuota},
+		{Text: fmt.Sprintf("Quota  %s of %d crystals%s", value(fieldQuota), e.crystals(), e.shardNote()), Selected: s.cursor == fieldQuota},
 		{Text: fmt.Sprintf("Size   %d x %d", e.doc.width(), e.doc.height())},
 		{Text: fmt.Sprintf("Format version %d", e.doc.formatVersion)},
 		{},

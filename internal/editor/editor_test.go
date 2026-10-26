@@ -725,6 +725,26 @@ func TestLayoutHitTesting(t *testing.T) {
 	}
 }
 
+// debugGlyphW is the width of the renderer's debug font, in pixels
+// (render.glyphW), which the bottom bar's text is drawn in.
+const debugGlyphW = 6
+
+// The bar's help lines fit beside the palette on the app's 960-pixel screen,
+// so adding a brush cannot silently cut them short.
+func TestHelpFitsBesideThePalette(t *testing.T) {
+	e, _ := open(t, NewCave(), "")
+	fits := (testLayout.Width - testLayout.TextX() - 8) / debugGlyphW // as render.drawEditorBar clips
+	info := e.View().Info
+	if len(info) < 3 {
+		t.Fatalf("info %q: want the help lines", info)
+	}
+	for _, line := range info[1:] {
+		if n := len([]rune(line)); n > fits {
+			t.Errorf("help line of %d characters does not fit in %d: %q", n, fits, line)
+		}
+	}
+}
+
 func TestLine(t *testing.T) {
 	for _, tc := range [][2]sim.Pos{{pos(0, 0), pos(5, 2)}, {pos(5, 5), pos(1, 9)}, {pos(3, 3), pos(3, 3)}, {pos(0, 4), pos(0, -2)}} {
 		ps := line(tc[0], tc[1])
@@ -784,6 +804,9 @@ func TestRandomEditingKeepsInvariants(t *testing.T) {
 	}
 }
 
+// valveBrush is the valve brush's index in Palette.
+var valveBrush, _, _ = brushFor(sim.SymbolValveShut)
+
 func randomInput(rng *rand.Rand) Input {
 	in := Input{
 		MouseX: rng.IntN(testLayout.Width+64) - 32, MouseY: rng.IntN(testLayout.Height+64) - 32,
@@ -817,7 +840,7 @@ func randomInput(rng *rand.Rand) Input {
 	case 12:
 		in.Reach = true
 	case 13: // the valve and gate brushes, more often than chance
-		in.Brush = len(Palette) - rng.IntN(2)
+		in.Brush = 1 + [...]int{valveBrush, gateBrush}[rng.IntN(2)]
 	}
 	return in
 }
@@ -950,5 +973,44 @@ func TestSymbolNamesCreatures(t *testing.T) {
 		if got := symbolName(r); got != want {
 			t.Errorf("symbolName(%q) = %q, want %q", r, got, want)
 		}
+	}
+}
+
+// The glimmer brush, on =, turns clockwise like the crawler's. Its glimmers
+// raise an older cave to format version 5, Alt-click picks one back with its
+// facing, the bar names it, and the quota may count on what it could leave.
+func TestGlimmerBrush(t *testing.T) {
+	e, _ := open(t, embedded(t, "crawler_warren").Draft(), "")
+	if e.doc.formatVersion != 4 {
+		t.Fatalf("Crawler Warren is version %d", e.doc.formatVersion)
+	}
+	glimmer := len(Palette) // the last brush
+	if Palette[glimmer-1].Key != "=" {
+		t.Fatalf("the last brush is on %q", Palette[glimmer-1].Key)
+	}
+	tap(e, Input{Brush: glimmer})
+	if e.symbol() != '▲' {
+		t.Fatalf("glimmer brush starts facing up, got %q", e.symbol())
+	}
+	tap(e, Input{Brush: glimmer})
+	if e.symbol() != '▶' {
+		t.Fatalf("pressing = again turns the glimmer clockwise, got %q", e.symbol())
+	}
+	p := pos(3, 3) // floor in the ring corridor
+	click(e, p)
+	if e.doc.at(p) != '▶' || e.doc.formatVersion != 5 || !strings.Contains(e.View().Hint, "Format version raised to 5") {
+		t.Fatalf("painted %q, version %d, hint %q", e.doc.at(p), e.doc.formatVersion, e.View().Hint)
+	}
+	if v := e.View(); !strings.Contains(v.Status, "Quota 5 of 6 (+9 from glimmers)") || !strings.HasSuffix(v.Info[0], "glimmer facing right") {
+		t.Fatalf("status %q, info %q", v.Status, v.Info)
+	}
+	tap(e, Input{Brush: 1})
+	drag(e, false, Input{Alt: true}, p)
+	if e.symbol() != '▶' {
+		t.Fatalf("Alt-click on a glimmer picked %q", e.symbol())
+	}
+	tap(e, Input{Undo: true})
+	if e.doc.at(p) != ' ' || e.doc.formatVersion != 4 {
+		t.Fatalf("undo left %q at version %d", e.doc.at(p), e.doc.formatVersion)
 	}
 }

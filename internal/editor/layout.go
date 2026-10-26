@@ -16,10 +16,12 @@ type Layout struct {
 	Top, Bottom   int // heights of the top and bottom bars
 }
 
-// Palette slot geometry within the bottom bar.
+// Palette slot geometry within the bottom bar. The pitch leaves room for the
+// renderer's selection frame (3 pixels outside a tile) between tiles, and is
+// as tight as that allows so the twelve slots leave the bar's text its width.
 const (
 	slotPad   = 8  // margin before the first slot and above the tiles
-	slotPitch = 40 // distance between slot left edges
+	slotPitch = 37 // distance between slot left edges
 )
 
 // ViewTiles is the size of the cave view in tiles.
