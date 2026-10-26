@@ -1,6 +1,6 @@
-# Deep Shift rules reference — rule version 4
+# Deep Shift rules reference — rule version 5
 
-This file describes the rules **as implemented** in `internal/sim` (`sim.RuleVersion = 4`). The code and its
+This file describes the rules **as implemented** in `internal/sim` (`sim.RuleVersion = 5`). The code and its
 tests are authoritative; keep this file in step with them.
 
 - **Rule version 1** covered movement, digging, crystals and the quota-sealed exit.
@@ -8,10 +8,12 @@ tests are authoritative; keep this file in step with them.
   pushing for boulders.
 - **Rule version 3** added **water** (a conserved fluid layer that falls and spreads), **sluice gates**
   and the **valves** that open and close them, and the player's **Interact** action.
-- **Rule version 4** adds **crawlers**: creatures that follow the wall on their left, catch the player,
+- **Rule version 4** added **crawlers**: creatures that follow the wall on their left, catch the player,
   are crushed by falling objects and drown in water.
+- **Rule version 5** adds **glimmers**: the crawler's mirror image, following the wall on their right,
+  which **shatter into crystals** when a falling object lands on them.
 
-Caves without crawlers play exactly as under rule version 3.
+Caves without glimmers play exactly as under rule version 4.
 
 ## Grid and coordinates
 
@@ -35,6 +37,7 @@ Caves without crawlers play exactly as under rule version 3.
 | crystal | `*` | yes | falls and rolls like a boulder; collected when the player enters its cell, even while it is falling; never pushed |
 | boulder | `O` | yes | always on open floor; can be pushed; needs cave `format_version` 2 |
 | crawler | `↑` `↓` `←` `→` | no | the arrow is the way it faces; never falls or is pushed; needs cave `format_version` 4 ([Crawlers](#crawlers)) |
+| glimmer | `▲` `▼` `◀` `▶` | no | the triangle is the way it faces; never falls or is pushed; needs cave `format_version` 5 ([Glimmers](#glimmers)) |
 
 | Water | Symbol | Notes |
 |---|---|---|
@@ -48,8 +51,9 @@ Caves without crawlers play exactly as under rule version 3.
   or is collected. Cave files always start objects at rest.
 - Only objects on open floor are subject to gravity. Level files cannot place a boulder inside earth.
 - **Water** may only be in open floor without a boulder or crystal. It shares cells with the player.
-  Water reaching a crawler drowns it by the end of the world step.
-- A crawler's cell also carries its **facing**: the direction it last moved, or starts facing.
+  Water reaching a crawler or glimmer drowns it by the end of the world step.
+- Crawlers and glimmers are the **creatures**. A creature's cell also carries its **facing**: the direction
+  it last moved, or starts facing.
 - Anything outside the cave behaves as a wall. "Empty" below means open floor with no occupant; water does
   not matter.
 - Water, gates and valves need cave `format_version` 3. Each valve is linked to its gates by the cave's
@@ -70,12 +74,12 @@ Caves without crawlers play exactly as under rule version 3.
      1. **Gravity:** boulders and crystals are scanned **bottom row to top row, and left to right
         within a row**. Each object updates at most once per tick: a cell an object moved into this step
         is skipped if the scan reaches it again, and a boulder pushed this tick sits out the step.
-     2. **Crawlers**, only on ticks that are multiples of `CrawlerIntervalTicks = 6` (provisional, so
-        crawlers move 3.3 cells/s against the player's 5): scanned **top row to bottom row, left to
-        right within a row**. Each crawler moves at most once per step: a cell a crawler moved into is
-        skipped if the scan reaches it again. A catch ends the crawler step.
+     2. **Creatures**, only on ticks that are multiples of `CrawlerIntervalTicks = 6` (provisional, so
+        creatures move 3.3 cells/s against the player's 5): crawlers and glimmers together, scanned
+        **top row to bottom row, left to right within a row**. Each moves at most once per step: a cell a
+        creature moved into is skipped if the scan reaches it again. A catch ends the creature step.
      3. **Water:** falls, then spreads (below).
-     4. **Drowning:** every crawler whose cell now holds water is removed, in row-major order.
+     4. **Drowning:** every creature whose cell now holds water is removed, in row-major order.
   3. **Quota.** If the exit is sealed and `collected ≥ required_crystals`, it opens and emits
      `exit-opened`. This is skipped if the player died this tick.
   4. The tick counter increments.
@@ -88,7 +92,7 @@ Caves without crawlers play exactly as under rule version 3.
 | outside the cave, a wall, a closed gate or a valve | blocked | — | not started |
 | sealed exit | blocked | `exit-sealed` | not started |
 | deep water (4 units) | blocked | `too-deep` | not started |
-| a crawler | the player is caught and does not move; status `dead` | `player-caught` (crawler → player) | — |
+| a crawler or glimmer | the player is caught and does not move; status `dead` | `player-caught` (creature → player) | — |
 | empty or open gate, dry or shallow | move (the player wades in any water) | `moved` | started |
 | earth | dig it (earth → empty), move | `moved`, `dug` | started |
 | crystal (resting or falling) | collect it (+1, crystal removed), move | `moved`, `collected` | started |
@@ -118,9 +122,10 @@ or `crystal`). Water never stops an object: cells below and beside are judged ig
 | cell below is empty | fall one cell | `fell` (from → to) | yes |
 | player below, object **falling** | the player is crushed; the object stops on them; status `dead` | `player-crushed` (object → player) | no |
 | crawler below, object **falling** | the crawler is crushed and removed; the object falls into its cell | `crawler-crushed`, then `fell` | yes |
+| glimmer below, object **falling** | the glimmer shatters into crystals ([Glimmers](#glimmers)); the object stops where it is | `glimmer-shattered`, a `crystal-formed` for each crystal, then `landed` | no |
 | below is rounded (boulder or crystal), the **left** cell and the cell below it are both empty | roll one cell left | `rolled` | yes |
 | as above but left is blocked, **right** cell and the cell below it both empty | roll one cell right | `rolled` | yes |
-| anything else (earth, wall, exit, closed gate, valve, cave floor, a resting object on the player or a crawler, blocked rolls) | stay | `landed` if it was falling | no |
+| anything else (earth, wall, exit, closed gate, valve, cave floor, a resting object on the player or a creature, blocked rolls) | stay | `landed` if it was falling | no |
 
 - **Never teleports:** a fall moves exactly one cell down. A roll moves one cell sideways, and the object
   drops into the diagonal on the *next* gravity step.
@@ -182,7 +187,7 @@ walls, so it can patrol up and down shafts as easily as along corridors.
 
 - **Open to a crawler:** open floor (empty terrain or an open gate) holding **no water at all** and no
   occupant except the player. Earth, walls, closed gates, valves, the exit, boulders, crystals, other
-  crawlers, any water and the cave edge all block it.
+  creatures, any water and the cave edge all block it.
 - **Left-hand rule:** on its step a crawler tries the cell to its **left**, then **ahead**, then to its
   **right**, then **behind**, relative to its facing, and takes the first one open to it. Its facing becomes
   the direction it moved. With all four blocked it stays put and keeps its facing.
@@ -192,7 +197,7 @@ walls, so it can patrol up and down shafts as easily as along corridors.
     on a crawler's right is a safe place to wait while it passes.
 - **Catching the player:** if the cell a crawler picks holds the player, it catches them: `player-caught`
   (crawler → player), status `dead`. The crawler stays where it is (it turns to face the player), and no
-  other crawler moves that tick. The rest of the world step still runs, as after a crush.
+  other creature moves that tick. The rest of the world step still runs, as after a crush.
   - Walking into a crawler is fatal too (see Player actions): the player does not move.
   - **Standing next to a crawler is safe.** Only a crawler stepping into the player's cell, or the player
     stepping into the crawler's, catches.
@@ -206,7 +211,44 @@ walls, so it can patrol up and down shafts as easily as along corridors.
   crawler's cell (and drown it).
 - **Gates:** an open gate is floor to a crawler. A crawler standing in a gate jams it, like any occupant.
 - **Validation:** a crawler must face up, down, left or right; it cannot start in water, earth, a wall, a
-  closed gate, a valve or on the exit. Only crawlers have a facing.
+  closed gate, a valve or on the exit. Only creatures have a facing.
+
+## Glimmers
+
+A glimmer is the crawler's mirror image: it keeps the wall on its **right**. It holds crystals, and a
+falling object landing on it shatters it into them.
+
+- **Right-hand rule:** on its step a glimmer tries the cell to its **right**, then **ahead**, then to its
+  **left**, then **behind**, and takes the first one open to it. Its facing becomes the direction it
+  moved. With all four blocked it stays put and keeps its facing.
+  - Round a pillar it goes clockwise, the pillar on its right; in open space it turns in a tight square
+    to the right.
+  - Openings on its **left** are only taken when its right and ahead are both blocked. A pocket or tunnel
+    on a glimmer's left is a safe place to wait while it passes.
+- **Everything else is the crawler's:** the same cells are open to it, it moves on the same ticks, in the
+  same scan as crawlers (of two creatures wanting one cell, the first in the scan gets it), it catches the
+  player the same two ways (`player-caught` names it), it never steps into water, and water reaching it
+  drowns it (`glimmer-drowned`). Crawlers and glimmers block each other.
+- **Shattering:** a **falling** boulder or crystal landing on a glimmer (directly above it, in the gravity
+  phase) shatters it:
+  1. The glimmer is removed (`glimmer-shattered`, object → glimmer).
+  2. Its own cell, and every **empty, dry floor** cell of the 3×3 block around it, gets a **resting
+     crystal**, in row-major order (`crystal-formed` for each). Cells outside the cave are skipped.
+     Nothing else in the block changes: earth, walls, the exit, gates, valves, boulders, crystals,
+     creatures, the player and cells holding any water stay as they were. So a shattering never hurts the
+     player and never creates or destroys water.
+  3. The object stops where it was (`landed`); it does not fall on through.
+  - A glimmer's cell is always dry when gravity runs (water drowns it in the step it arrives), so a
+    shattering leaves at least one crystal, and at most `ShatterCrystals = 9` (less the object's own cell,
+    so 8 in practice).
+  - **New crystals sit out the rest of the gravity step,** like a pushed boulder. From the next step they
+    fall and roll by the usual rules. A crystal that forms over the player rests on them and never crushes
+    them on that step.
+  - A **resting** object over a glimmer is held up and shatters nothing, as with crawlers.
+- **Drowning leaves nothing:** a drowned glimmer leaves no crystals.
+- **Quota:** `required_crystals` may count on up to 9 crystals per glimmer (cave `format_version` 5). A
+  completion replay is what shows a cave can really be finished.
+- **Validation:** as for crawlers.
 
 ## Examples
 
@@ -329,20 +371,63 @@ crushes the crawler at tick 586 and comes to rest at the bottom.
 into the middle of a five-cell corridor settle as `12321`. That covers all five cells, so the crawler
 pacing there is drowned wherever it is, and no cell is deep, so the player can wade through afterwards.
 
+**Shattering** (`TestFallingObjectShattersAGlimmer`): a falling boulder lands on a glimmer in a small
+room. The glimmer's cell and the seven empty cells around it each get a resting crystal; the boulder's own
+cell keeps the boulder, which stops there.
+
+```text
+start (boulder falling)   tick 0
+|#######|                 |#######|
+|# O #@#|                 |#*O*#@#|
+|# ▲ ###|                 |#***###|
+|#   ###|                 |#***###|
+|#######|                 |#######|
+```
+
+**The vault** (fixture `glimmer_hollow_complete.json`, `TestGlimmerHollowVaultShattersWhateverTheTiming`,
+columns 6 to 12 of rows 3 to 10): the vault glimmer is boxed in under a closed gate holding a boulder.
+At tick 547 the player turns the valve; at tick 548 the boulder drops into the open gate; at tick 550,
+falling, it shatters the glimmer into five crystals and stops. The two below the vault walls fall from
+tick 552 and land in the basin at tick 556. Gravity runs before creatures, so the boulder always fills the
+gate before the glimmer could leave through it.
+
+```text
+tick 547    tick 548    tick 550    tick 556
+|#     #|   |#     #|   |#     #|   |#     #|
+|v@#O# #|   |v@# # #|   |v@# # #|   |v # # #|
+|#  g  #|   |#  O  #|   |# *O* #|   |# @O* #|
+|###▼#.#|   |###▼#.#|   |###*#.#|   |###*#.#|
+|## # .#|   |## # .#|   |##*#*.#|   |## # .#|
+|## # .#|   |## # .#|   |## # .#|   |## # .#|
+|##     |   |##     |   |##     |   |##* *  |
+|#######|   |#######|   |#######|   |#######|
+```
+
+**Caught by a glimmer** (fixture `glimmer_hollow_caught.json`, columns 19 to 26 of rows 2 and 3): the
+player steps from the dug entrance into the ring's top corridor at tick 145, with the glimmer three cells
+west and heading east. It moves alongside at tick 156 (still safe) and into the player at tick 162.
+
+```text
+tick 145     tick 156     tick 162
+|##### ##|   |##### ##|   |##### ##|
+|  ▶  @  |   |    ▶@  |   |    ▶@  |  player-caught: status dead
+```
+
 ## Determinism contract
 
 - The outcome depends only on **(cave, seed, rule version, per-tick inputs)**.
 - Cells are processed in a documented order (row-major for the player and quota, bottom-to-top /
-  left-to-right for gravity, top-to-bottom / left-to-right for crawlers and drowning, bottom-to-top for
-  water falls). Water spreads are judged on frozen levels, so
+  left-to-right for gravity, row-major for the crystals of a shattering, top-to-bottom / left-to-right for
+  creatures and drowning, bottom-to-top for water falls). Water spreads are judged on frozen levels, so
   their order cannot matter. No Go map iteration, wall-clock time, file I/O or global state affects the
   rules. `internal/sim` imports only `crypto/sha256`, `encoding/binary`, `encoding/hex`, `errors`, `fmt`
   and `strings`; `TestImportsArePure` and a `go list -deps` check in CI enforce this.
-- **Randomness:** SplitMix64 seeded with the cave seed. Its state is hashed. Rule version 4 does not draw
-  from it: crawlers are fully determined by the cave.
+- **Randomness:** SplitMix64 seeded with the cave seed. Its state is hashed. Rule versions 4 and 5 do not
+  draw from it: creatures and shattering are fully determined by the cave.
 - **Test-cave example:** in `test_cave` two crystals sit in open pockets, so they drop one cell at tick 0
   (`(9,21)->(9,22)` and `(25,5)->(25,6)`, visible with `cavetool replay -trace`).
-- **State hash** (`sim.StateHash`, layout v4): SHA-256 of a fixed little-endian layout starting with
+- **State hash** (`sim.StateHash`, layout v4, unchanged by rule version 5, which added no state; glimmers
+  use the occupant and facing bytes): SHA-256 of a fixed little-endian layout starting with
   `deep-shift/state-hash/v4\0`. It then covers rule version (u32), seed (u64), tick (u64), width, height,
   required, collected, player x and player y (u32 each), exit-open, status and cooldown (u8 each), and the
   PRNG state (u64). Next come each cell's terrain, occupant, falling flag, water and facing (u8 each), in
@@ -376,10 +461,15 @@ pacing there is drowned wherever it is, and no cell is deep, so the player can w
 | Crawlers catch the player both ways; a catch ends the crawler step; adjacency is safe | `TestCrawlerCatchesThePlayerByMovingIntoThem`, `TestWalkingIntoACrawlerIsFatal`, `TestCatchStopsTheCrawlerStep` |
 | Falling objects crush crawlers, resting ones do not; water drowns them and they never enter it | `TestFallingObjectCrushesACrawler`, `TestRestingObjectDoesNotCrushACrawler`, `TestCrawlersNeverEnterWaterAndDrownWhenItReachesThem` |
 | Crawlers are blocked by terrain, objects and closed gates, pass open gates; reset; validation; symbols | `TestCrawlersAreBlockedByTerrainAndObjects`, `TestResetRestoresCrawlers`, `TestCrawlerValidation`, `TestCrawlerSymbolsRoundTrip` |
-| Invariants under random input with water, gates, valves and crawlers (20 seeds × 3000 ticks) | `TestRandomisedRunsKeepInvariantsAndDeterminism` (water conserved and bounded, never in walls or objects, gates match valves; crawlers have a facing, stand on dry floor, move one cell, and are only removed by a crush or drowning) |
-| 100 identical runs, including deaths by crush and by crawler, a reservoir drain, and crawlers crushed and drowned | `TestReplayIsDeterministicAcross100Runs` |
+| Glimmers: right-hand rule, the exact mirror image of a crawler, open-space square | `TestGlimmerFollowsTheWallOnItsRight`, `TestGlimmerIsTheMirrorImageOfACrawler` (30 random caves run mirrored with the kinds swapped; mutation-checked: glimmers on the left-hand rule fail it), `TestGlimmerInOpenSpaceCirclesASquare` |
+| Glimmers catch both ways and name themselves; crawlers and glimmers share one scan and block each other; blocked by terrain, objects and water | `TestCreaturesCatchThePlayerEitherWay`, `TestCrawlersAndGlimmersShareOneScan`, `TestGlimmersAreBlockedByTerrainObjectsAndCreatures` |
+| Shattering: which cells fill (every kind of neighbour, boulders and crystals, the cave edge), the object stops, the player is spared | `TestFallingObjectShattersAGlimmer` (mutation-checked: crystals forming in wet cells fail it), `TestShatteringAtTheCaveEdge` (mutation-checked: a block wrapping round the rows fails it), `TestShatteringSparesThePlayer` |
+| New crystals wait for the next gravity step; resting objects shatter nothing; drowning leaves nothing; reset; validation and the quota bound; symbols | `TestNewCrystalsWaitForTheNextGravityStep` (mutation-checked: without the updated marks a crystal falls in the tick it formed), `TestRestingObjectDoesNotShatterAGlimmer` (mutation-checked: shattering on any object over a glimmer fails it), `TestDrownedGlimmerLeavesNoCrystals`, `TestResetRestoresGlimmers`, `TestGlimmerValidation`, `TestGlimmerSymbolsRoundTrip` |
+| Invariants under random input with water, gates, valves, crawlers and glimmers (20 seeds × 3000 ticks) | `TestRandomisedRunsKeepInvariantsAndDeterminism` (water conserved and bounded, never in walls or objects, gates match valves; creatures have a facing, stand on dry floor, move one cell, and are only removed by a crush, a shattering or drowning; every shattering's crystals lie in its block, one in the glimmer's cell, and crystals are conserved counting those formed; no crystal moves in the tick it formed) |
+| 100 identical runs, including deaths by crush, by crawler and by glimmer, a reservoir drain, crawlers crushed and drowned, and glimmers shattered and drowned | `TestReplayIsDeterministicAcross100Runs` |
 | Death ends the attempt and is logged as a replay | `TestCrushFixtureEndsInDeath`, `TestCrushEndsAttemptAndLogsReproducibleReplay` |
 | Cave 04 needs the sluice and conserves water | `TestCave04TheFloodedShaftIsTheOnlyWayDown`, `TestCave04FixtureDrainsTheShaftBeforeGoingDown` |
 | Crawler Warren: the drop and the flood work whatever the timing; the shaft is the only way down; a catch is logged and reproducible | `TestCrawlerWarrenDropCrushesTheCrawlerWhateverTheTiming`, `TestCrawlerWarrenFloodDrownsTheCrawlerWhateverTheTiming`, `TestCrawlerWarrenTheShaftIsTheOnlyWayDown`, `TestCaughtFixtureEndsInDeath`, `TestCaughtEndsTheAttemptWithItsOwnOverlay` |
+| Glimmer Hollow: the vault always gives the same five crystals and the sluice always drowns its glimmer, whatever the timing; the ring glimmer goes clockwise; the vault glimmer is boxed in; the quota needs the vault and the ring; the corridor is the only way out; a catch is logged and reproducible | `TestGlimmerHollowVaultShattersWhateverTheTiming` (mutation-checked: creatures moving before gravity fail it), `TestGlimmerHollowFloodDrownsTheGlimmerWhateverTheTiming`, `TestGlimmerHollowRingGlimmerGoesRoundClockwise`, `TestGlimmerHollowVaultGlimmerIsBoxedIn`, `TestGlimmerHollowQuotaNeedsTheVaultAndTheRing`, `TestGlimmerHollowTheCorridorIsTheOnlyWayToTheExit`, `TestGlimmerCaughtFixtureEndsInDeath`, `TestGlimmerCatchEndsTheAttemptWithItsOwnOverlay` |
 | Every cave is completable | `TestEveryEmbeddedCaveHasACompletionFixture` |
 | Hash layout pinned | `TestStateHashGolden`, golden replay fixtures |

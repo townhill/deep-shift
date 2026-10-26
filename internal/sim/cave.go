@@ -70,7 +70,7 @@ func (c *Cave) Validate() error {
 
 	var errs []error
 	var players []Pos
-	crystals := 0
+	crystals, glimmers := 0, 0
 	for i, cell := range c.Cells {
 		p := Pos{i % c.Width, i / c.Width}
 		if cell.Terrain >= terrainCount {
@@ -85,12 +85,12 @@ func (c *Cave) Validate() error {
 			errs = append(errs, fmt.Errorf("cell %s: only boulders and crystals can be falling", p))
 		}
 		switch {
-		case cell.Occupant == OccupantCrawler && (cell.Facing < DirUp || cell.Facing > DirRight):
-			errs = append(errs, fmt.Errorf("cell %s: a crawler must face up, down, left or right", p))
-		case cell.Occupant != OccupantCrawler && cell.Facing != DirNone:
-			errs = append(errs, fmt.Errorf("cell %s: only crawlers have a facing", p))
-		case cell.Occupant == OccupantCrawler && cell.Water > 0:
-			errs = append(errs, fmt.Errorf("cell %s: a crawler cannot start in water", p))
+		case cell.Occupant.Creature() && (cell.Facing < DirUp || cell.Facing > DirRight):
+			errs = append(errs, fmt.Errorf("cell %s: a %s must face up, down, left or right", p, cell.Occupant))
+		case !cell.Occupant.Creature() && cell.Facing != DirNone:
+			errs = append(errs, fmt.Errorf("cell %s: only crawlers and glimmers have a facing", p))
+		case cell.Occupant.Creature() && cell.Water > 0:
+			errs = append(errs, fmt.Errorf("cell %s: a %s cannot start in water", p, cell.Occupant))
 		}
 		switch {
 		case cell.Water > WaterCapacity:
@@ -101,7 +101,7 @@ func (c *Cave) Validate() error {
 		if cell.Occupant == OccupantNone {
 			continue
 		}
-		if (cell.Occupant == OccupantBoulder || cell.Occupant == OccupantCrawler) && cell.Terrain == TerrainEarth {
+		if (cell.Occupant == OccupantBoulder || cell.Occupant.Creature()) && cell.Terrain == TerrainEarth {
 			errs = append(errs, fmt.Errorf("cell %s: a %s cannot be embedded in earth", p, cell.Occupant))
 		}
 		switch cell.Terrain {
@@ -115,6 +115,8 @@ func (c *Cave) Validate() error {
 			players = append(players, p)
 		case OccupantCrystal:
 			crystals++
+		case OccupantGlimmer:
+			glimmers++
 		}
 	}
 	switch len(players) {
@@ -126,8 +128,13 @@ func (c *Cave) Validate() error {
 	}
 	if c.RequiredCrystals < 0 {
 		errs = append(errs, fmt.Errorf("required crystals %d is negative", c.RequiredCrystals))
-	} else if c.RequiredCrystals > crystals {
-		errs = append(errs, fmt.Errorf("required crystals %d exceeds the %d crystals in the cave", c.RequiredCrystals, crystals))
+	} else if most := crystals + ShatterCrystals*glimmers; c.RequiredCrystals > most {
+		if glimmers == 0 {
+			errs = append(errs, fmt.Errorf("required crystals %d exceeds the %d crystals in the cave", c.RequiredCrystals, crystals))
+		} else {
+			errs = append(errs, fmt.Errorf("required crystals %d exceeds the %d the cave can yield (%d placed, up to %d from each of %d glimmer(s))",
+				c.RequiredCrystals, most, crystals, ShatterCrystals, glimmers))
+		}
 	}
 	errs = append(errs, c.validateMechanisms()...)
 	return errors.Join(errs...)

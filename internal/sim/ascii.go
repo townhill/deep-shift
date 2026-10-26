@@ -24,6 +24,10 @@ const (
 // rows (format_version 4 or later) and in dumps.
 var crawlerSymbols = [...]rune{DirUp: '↑', DirDown: '↓', DirLeft: '←', DirRight: '→'}
 
+// Glimmers are written as a triangle pointing the way they face, in level
+// rows (format_version 5 or later) and in dumps.
+var glimmerSymbols = [...]rune{DirUp: '▲', DirDown: '▼', DirLeft: '◀', DirRight: '▶'}
+
 // Shallow water on empty floor is written as its amount, '1' to '3'
 // (WaterCapacity-1). Water, gates and valves need format_version 3 or later.
 
@@ -31,7 +35,7 @@ var crawlerSymbols = [...]rune{DirUp: '↑', DirDown: '↓', DirLeft: '←', Dir
 // messages and documentation.
 const SymbolLegend = `'#' wall, '.' earth, ' ' empty, '*' crystal, '@' player start, 'E' exit, 'O' boulder, ` +
 	`'~' deep water, '1'-'3' shallow water, 'G'/'g' closed/open gate, 'V'/'v' shut/open valve, ` +
-	`'↑' '↓' '←' '→' crawler facing that way`
+	`'↑' '↓' '←' '→' crawler facing that way, '▲' '▼' '◀' '▶' glimmer facing that way`
 
 // CellForSymbol maps a level-file symbol to its initial cell. Crystals,
 // boulders, water and the player start on empty terrain; boulders start at
@@ -67,8 +71,11 @@ func CellForSymbol(r rune) (Cell, bool) {
 		return Cell{Terrain: TerrainValveOpen}, true
 	}
 	for d := DirUp; d <= DirRight; d++ {
-		if r == crawlerSymbols[d] {
+		switch r {
+		case crawlerSymbols[d]:
 			return Cell{Terrain: TerrainEmpty, Occupant: OccupantCrawler, Facing: d}, true
+		case glimmerSymbols[d]:
+			return Cell{Terrain: TerrainEmpty, Occupant: OccupantGlimmer, Facing: d}, true
 		}
 	}
 	return Cell{}, false
@@ -78,6 +85,12 @@ func CellForSymbol(r rune) (Cell, bool) {
 func IsCrawlerSymbol(r rune) bool {
 	c, ok := CellForSymbol(r)
 	return ok && c.Occupant == OccupantCrawler
+}
+
+// IsGlimmerSymbol reports whether r is one of the glimmer triangles.
+func IsGlimmerSymbol(r rune) bool {
+	c, ok := CellForSymbol(r)
+	return ok && c.Occupant == OccupantGlimmer
 }
 
 // Symbol returns the dump symbol for c. Occupants take precedence over
@@ -94,6 +107,11 @@ func Symbol(c Cell, exitOpen bool) rune {
 	case OccupantCrawler:
 		if c.Facing >= DirUp && c.Facing <= DirRight {
 			return crawlerSymbols[c.Facing]
+		}
+		return '?'
+	case OccupantGlimmer:
+		if c.Facing >= DirUp && c.Facing <= DirRight {
+			return glimmerSymbols[c.Facing]
 		}
 		return '?'
 	}

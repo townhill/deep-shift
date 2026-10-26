@@ -4,7 +4,7 @@
   "cave_id": "crawler_warren",
   "cave_checksum": "40c39603a2514803669346917b85cee9b31393ffcc54b4f866766c503b57c9fb",
   "seed": 20261023,
-  "rule_version": 4,
+  "rule_version": 5,
   "ticks": 153,
   "commands": [
     {"tick":0,"action":"right"},
@@ -22,7 +22,7 @@
     "final_tick": 133,
     "status": "dead",
     "collected": 1,
-    "final_hash": "6f216ea4b1494c7b3ff02203917fe7846b5e2bfe0e72adf0095477b2437b2289",
-    "trace_hash": "1c922c0f2b7c72a10e69fe0fa1f2d90e0b79abfa25a0b9873376ecaa1b33bea9"
+    "final_hash": "bcf805006c4ad160fe8ac070681f2ad9d795b1d101455d596d13a2f203c2caaf",
+    "trace_hash": "bdeb70f05d57d4d379e0d89bc62d0d47ae3956af3ce72ca7fc26d2f12f23a837"
   }
 }

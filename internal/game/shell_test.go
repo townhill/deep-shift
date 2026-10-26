@@ -72,7 +72,9 @@ func TestCaveListChoosesAnyCaveAndWraps(t *testing.T) {
 		text = append(text, e.Text)
 	}
 	joined := strings.Join(text, "|")
-	for _, want := range []string{"1  First Descent", "5  The Sluice", "Extras", "Proving Ground"} {
+	// The list is taller than the menu, so the last extra starts below the
+	// fold; wrapping up to it below scrolls it into view.
+	for _, want := range []string{"1  First Descent", "5  The Sluice", "Extras", "Crawler Warren"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("cave list %q lacks %q", joined, want)
 		}

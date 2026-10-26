@@ -1,0 +1,30 @@
+{
+  "format_version": 1,
+  "description": "Death replay for glimmer_hollow. Takes the tunnel crystal and digs the way into the ring (safe: it is on the glimmer's left). Steps down into the ring's top corridor (tick 145) while the glimmer is three cells west, heading east along it towards the player. It moves next to the player (tick 156, still safe), then into them, catching them (tick 162). Status dead; the cave freezes at tick 163.",
+  "cave_id": "glimmer_hollow",
+  "cave_checksum": "91f7e7b67894a6112092067cf18f50eb72ec7cb4da70460ed04ee73602f8e884",
+  "seed": 20261025,
+  "rule_version": 5,
+  "ticks": 183,
+  "commands": [
+    {"tick":0,"action":"right"},
+    {"tick":4,"action":"right"},
+    {"tick":8,"action":"right"},
+    {"tick":12,"action":"right"},
+    {"tick":16,"action":"right"},
+    {"tick":20,"action":"right"},
+    {"tick":24,"action":"right"},
+    {"tick":28,"action":"right"},
+    {"tick":32,"action":"right"},
+    {"tick":36,"action":"right"},
+    {"tick":40,"action":"down"},
+    {"tick":145,"action":"down"}
+  ],
+  "expect": {
+    "final_tick": 163,
+    "status": "dead",
+    "collected": 1,
+    "final_hash": "f10bcac2f6406bbcec4de1c286b5f1ff2ca4f209fc3d757a0a1202c0215c8ee5",
+    "trace_hash": "07e7f0609faf981527c81cfd51100808ebf71772f7be6ae3597a0ec7ec4b1738"
+  }
+}

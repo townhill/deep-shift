@@ -83,8 +83,12 @@ func TestInvalidLevelsFailWithUsefulErrors(t *testing.T) {
 			d["format_version"] = 3
 			d["rows"] = []string{"#####", "#@*E#", "#→ ←#"}
 		}, want: []string{"rows[2]: symbol(s) '→' at x=1, '←' at x=3 need format_version 4 or later (this file is version 3)"}},
-		{name: "future format_version", mutate: func(d map[string]any) { d["format_version"] = 5 },
-			want: []string{"unsupported version 5", "reads format_version 1 to 4"}},
+		{name: "glimmer in a version 4 file", mutate: func(d map[string]any) {
+			d["format_version"] = 4
+			d["rows"] = []string{"#####", "#@*E#", "#▶ ◀#"}
+		}, want: []string{"rows[2]: symbol(s) '▶' at x=1, '◀' at x=3 need format_version 5 or later (this file is version 4)"}},
+		{name: "future format_version", mutate: func(d map[string]any) { d["format_version"] = 6 },
+			want: []string{"unsupported version 6", "reads format_version 1 to 5"}},
 		{name: "format_version zero", mutate: func(d map[string]any) { d["format_version"] = 0 },
 			want: []string{"unsupported version 0"}},
 		{name: "missing id", mutate: func(d map[string]any) { delete(d, "id") }, want: []string{"id: missing"}},
@@ -112,6 +116,11 @@ func TestInvalidLevelsFailWithUsefulErrors(t *testing.T) {
 			want: []string{"found 2 exits ('E') at (3,1), (1,2)"}},
 		{name: "quota above crystals", mutate: func(d map[string]any) { d["required_crystals"] = 2 },
 			want: []string{"required_crystals: 2 exceeds the 1 crystal(s)", "could never open"}},
+		{name: "quota above what glimmers can yield", mutate: func(d map[string]any) {
+			d["format_version"] = 5
+			d["rows"] = []string{"#####", "#@*E#", "#▶  #"}
+			d["required_crystals"] = 1 + sim.ShatterCrystals + 1
+		}, want: []string{"required_crystals: 11 exceeds the 10 crystal(s) the cave can yield (1 '*' in rows, up to 9 from each of 1 glimmer(s)), so the exit could never open"}},
 		{name: "negative quota", mutate: func(d map[string]any) { d["required_crystals"] = -1 },
 			want: []string{"required_crystals: -1 is negative"}},
 		{name: "missing quota", mutate: func(d map[string]any) { delete(d, "required_crystals") },
@@ -225,6 +234,37 @@ func TestVersion4ReadsCrawlers(t *testing.T) {
 	}
 	if s.Crawlers() != 4 || s.ASCII() != "#####\n#@*E#\n#↑→↓#\n#←  #\n#####\n" {
 		t.Fatalf("%d crawlers:\n%s", s.Crawlers(), s.ASCII())
+	}
+}
+
+func TestVersion5ReadsGlimmers(t *testing.T) {
+	doc := baseDoc()
+	doc["format_version"] = 5
+	doc["rows"] = []string{"#####", "#@*E#", "#▲▶▼#", "#◀ ↑#", "#####"}
+	doc["height"] = 5
+	// The quota may count on every crystal the four glimmers could leave.
+	doc["required_crystals"] = 1 + 4*sim.ShatterCrystals
+	l, err := Parse("v5.json", encode(t, doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Glimmers() != 4 || l.Crawlers() != 1 || l.Crystals() != 1 || l.RequiredCrystals != 37 {
+		t.Fatalf("glimmers %d, crawlers %d, crystals %d, quota %d", l.Glimmers(), l.Crawlers(), l.Crystals(), l.RequiredCrystals)
+	}
+	s, err := sim.New(l.Cave(), l.Seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		p sim.Pos
+		d sim.Dir
+	}{{sim.Pos{X: 1, Y: 2}, sim.DirUp}, {sim.Pos{X: 2, Y: 2}, sim.DirRight}, {sim.Pos{X: 3, Y: 2}, sim.DirDown}, {sim.Pos{X: 1, Y: 3}, sim.DirLeft}} {
+		if got := s.Cell(c.p); got.Occupant != sim.OccupantGlimmer || got.Facing != c.d {
+			t.Fatalf("cell %s = %+v, want a glimmer facing %s", c.p, got, c.d)
+		}
+	}
+	if s.ASCII() != "#####\n#@*E#\n#▲▶▼#\n#◀ ↑#\n#####\n" {
+		t.Fatalf("ASCII:\n%s", s.ASCII())
 	}
 }
 

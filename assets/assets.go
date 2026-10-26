@@ -22,11 +22,11 @@ const TestCave = "levels/test_cave.json"
 // Campaign lists the main caves in play order: SPEC §8's starter caves.
 var Campaign = []string{"cave_01", "cave_02", "cave_03", "cave_04", "cave_05"}
 
-// Extras lists embedded caves outside the campaign: the crawler example
-// cave (SPEC §7: every new system ships with one), and the Phase 1 test
-// cave, which stays playable because its golden replays pin the rule-1
+// Extras lists embedded caves outside the campaign: the crawler and glimmer
+// example caves (SPEC §7: every new system ships with one), and the Phase 1
+// test cave, which stays playable because its golden replays pin the rule-1
 // behaviour.
-var Extras = []string{"crawler_warren", "test_cave"}
+var Extras = []string{"crawler_warren", "glimmer_hollow", "test_cave"}
 
 // PlayOrder lists every embedded cave id in the order the app plays them:
 // the campaign, then the extras.

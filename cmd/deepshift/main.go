@@ -36,7 +36,7 @@ import (
 )
 
 func main() {
-	cave := flag.String("cave", "", "start at this embedded cave id (cave_01 to cave_05, crawler_warren or test_cave) or play this cave JSON file")
+	cave := flag.String("cave", "", "start at this embedded cave id (cave_01 to cave_05, crawler_warren, glimmer_hollow or test_cave) or play this cave JSON file")
 	edit := flag.String("edit", "", "open the cave editor on this cave: a cave JSON file (saved back to it), an embedded cave id (edited as a copy) or \"new\"")
 	replayDir := flag.String("replay-dir", userDir("replays"), "directory for replays of finished attempts (empty: do not save)")
 	cavesDir := flag.String("caves-dir", userDir("caves"), "directory for caves made in the editor (empty: new caves cannot be saved)")

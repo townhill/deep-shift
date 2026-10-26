@@ -51,8 +51,8 @@ func tinyCave(t *testing.T, rows ...string) *level.Level {
 	for i, r := range rows {
 		quoted[i] = fmt.Sprintf("%q", r)
 	}
-	doc := fmt.Sprintf(`{"format_version": 4, "id": "tiny", "title": "Tiny", "width": %d, "height": %d,
-		"seed": 1, "required_crystals": 0, "rows": [%s]}`, len([]rune(rows[0])), len(rows), strings.Join(quoted, ","))
+	doc := fmt.Sprintf(`{"format_version": %d, "id": "tiny", "title": "Tiny", "width": %d, "height": %d,
+		"seed": 1, "required_crystals": 0, "rows": [%s]}`, level.FormatVersion, len([]rune(rows[0])), len(rows), strings.Join(quoted, ","))
 	l, err := level.Parse("tiny.json", []byte(doc))
 	if err != nil {
 		t.Fatal(err)
@@ -60,14 +60,17 @@ func tinyCave(t *testing.T, rows ...string) *level.Level {
 	return l
 }
 
-// The overlay tells walking into a crawler apart from a crawler stepping
-// into the player, even one the player has just walked up to.
+// The overlay tells walking into a creature apart from a creature stepping
+// into the player, even one the player has just walked up to, and names the
+// creature and the wall it keeps.
 func TestCaughtOverlaySaysWhoMoved(t *testing.T) {
 	tests := []struct {
 		row, want string
 	}{
 		{"#@↓E#", "You walked into a crawler"},
-		{"#@ ←E#", "A crawler caught you"},
+		{"#@ ←E#", "A crawler caught you: they keep the wall on their left"},
+		{"#@▼E#", "You walked into a glimmer"},
+		{"#@ ◀E#", "A glimmer caught you: they keep the wall on their right"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.row, func(t *testing.T) {
@@ -120,11 +123,13 @@ func TestCrawlersGlideFacingTheirWay(t *testing.T) {
 }
 
 // Whatever happens in the cave (falls, pushes, collections, crushed and
-// drowned crawlers), every gliding sprite is headed for a cell that holds
-// it, so nothing is drawn that is no longer there.
+// drowned crawlers, shattered and drowned glimmers), every gliding sprite is
+// headed for a cell that holds it, so nothing is drawn that is no longer
+// there.
 func TestGlidingSpritesAlwaysMatchTheCave(t *testing.T) {
 	for _, tt := range []struct{ fixture, cave string }{
 		{"crawler_warren_complete.json", "crawler_warren"},
+		{"glimmer_hollow_complete.json", "glimmer_hollow"},
 		{"cave_03_complete.json", "cave_03"},
 		{"cave_05_boulder_route.json", "cave_05"},
 	} {

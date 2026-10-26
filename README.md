@@ -8,18 +8,20 @@ browser, Electron, server or database.
 The game takes design inspiration from the *rules-driven* arcade cave games of the 1980s. All of its code,
 caves, art, names and rules are original to this project.
 
-> **Status: Phases 0–4, Phase 5's creature and the first milestone of the cave editor delivered in the
-> cloud: a five-cave vertical slice, crawlers and an editor, all still needing their Mac playtest.**
-> Movement, digging, crystals, walls and a quota-sealed exit, plus:
+> **Status: Phases 0–4, Phase 5's creatures and the first milestone of the cave editor delivered in the
+> cloud: a five-cave vertical slice, crawlers, glimmers and an editor, all still needing their Mac
+> playtest.** Movement, digging, crystals, walls and a quota-sealed exit, plus:
 >
 > - **gravity:** boulders and crystals fall, roll and crush, and boulders can be pushed;
 > - **water:** it falls and spreads, is conserved exactly, and is too deep to wade when a cell is full;
 > - **sluice gates** that a valve opens and closes;
 > - **crawlers:** creatures that follow the wall on their left and catch you, but can be crushed by a
->   falling boulder or drowned.
+>   falling boulder or drowned;
+> - **glimmers:** the crawler's mirror image, following the wall on their right. Drop a boulder on one and it
+>   shatters into crystals; drown one and it leaves nothing.
 >
-> The campaign has five caves, plus two extras, "Crawler Warren" (crawlers) and the "Proving Ground" test
-> cave:
+> The campaign has five caves, plus three extras, "Crawler Warren" (crawlers), "Glimmer Hollow" (glimmers)
+> and the "Proving Ground" test cave:
 >
 > 1. "First Descent" (movement, digging, crystals, the exit);
 > 2. "Unstable Ground" (falling boulders);
@@ -39,10 +41,11 @@ caves, art, names and rules are original to this project.
 | Gravity: boulders and crystals fall, roll (left first) and crush; boulders push (no chains); at most one move per tick | `go test ./...`, randomised invariant runs, golden fixtures | Verified on Linux; CI runs them on macOS arm64 |
 | Water: falls then spreads with no left/right bias, conserved every tick, contained by every barrier, displaced by objects; gates and valves | `go test ./...` (hand-computed cases, mirror test, randomised invariants), cave 04 fixture | Verified on Linux; CI runs them on macOS arm64 |
 | Crawlers: left-hand rule, one move per step, catching both ways, crushed by falling objects only, drowned by water, reset | `go test ./...` (hand-computed paths, randomised invariants, mutation-checked), Crawler Warren fixtures and timing sweeps | Verified on Linux; CI runs them on macOS arm64 |
-| Determinism: 100 identical runs → identical hashes at every tick, including deaths by crush and by crawler, a reservoir drain, a boulder pushed through water, and crawlers crushed and drowned | `internal/replay` test + golden fixtures | Verified (Linux); CI checks the same golden hashes on macOS arm64 |
+| Glimmers: right-hand rule (the exact mirror of a crawler), shattering into crystals in empty dry floor only, new crystals waiting a step, the player spared, drowning leaving nothing | `go test ./...` (mirror test, a table of every kind of neighbour, randomised invariants, mutation-checked), Glimmer Hollow fixtures and timing sweeps | Verified on Linux; CI runs them on macOS arm64 |
+| Determinism: 100 identical runs → identical hashes at every tick, including deaths by crush, by crawler and by glimmer, a reservoir drain, a boulder pushed through water, crawlers crushed and drowned, and glimmers shattered and drowned | `internal/replay` test + golden fixtures | Verified (Linux); CI checks the same golden hashes on macOS arm64 |
 | Every cave can be completed; cave 05 has two distinct routes; cave 01 cannot hurt the player | Golden replays plus tests on each route's events and water state | Verified (Linux); CI runs them on macOS arm64 |
 | Menus: title, cave list, keys that chose an entry never leak into the game | `internal/game` shell tests; headless capture | Verified (Linux) |
-| Sound: twelve original synthesised cues, one per kind of event per tick | `internal/sfx` tests; in a headless capture the app's audio streams matched the synthesised cues sample for sample | Verified as data (Linux VM guest); **not yet heard on a Mac** |
+| Sound: thirteen original synthesised cues, one per kind of event per tick | `internal/sfx` tests; in a headless capture the app's audio streams matched the synthesised cues sample for sample (before the shatter cue was added) | Verified as data (Linux VM guest); **the shatter cue is checked by tests only; none yet heard on a Mac** |
 | Music: an original 32 s arcade loop; B turns it off and on, M mutes it with everything else, a paused cave or playtest holds it | `internal/sfx` tests (loop length, silent seam, peak below the cues), `internal/game` tests of the keys; in a headless capture the app's music stream matched the loop sample for sample, wrapped at 32 s, and B, M and Esc paused and resumed it | Verified as data (Linux VM guest); **not yet heard on a Mac** |
 | A finished attempt is saved as a replay that reproduces it exactly | Session tests; app run headlessly (below) | Verified (Linux) |
 | Cave files validate; broken caves give useful errors | `internal/level` tests, `cavetool validate` | Verified |
@@ -51,9 +54,9 @@ caves, art, names and rules are original to this project.
 | "My caves" in the cave list; caves that cannot be played say why; playtests of saved caves are recorded and re-run against the cave file | `internal/game` shell tests (mutation-checked); headless capture with `cavetool replay -cave` | Verified (Linux); **not yet used on a Mac** |
 | macOS arm64 / amd64 executables compile | Cross-compile from Linux; native build on CI's macOS runner | Compile-only |
 | `DeepShift.app` bundle builds and is ad-hoc signed | `scripts/build-macos-app.sh` on CI's macOS runner | Packaging checked in CI; **launch from Finder not yet verified** |
-| Window, keyboard, rendering, HUD on a real Mac | Owner ran `go run ./cmd/deepshift` on a Mac: "ok as a first pass" (Phase 1 build) | First pass only; **menus, sound, music, caves 01–05, boulders, water and crawlers not yet played on a Mac** |
+| Window, keyboard, rendering, HUD on a real Mac | Owner ran `go run ./cmd/deepshift` on a Mac: "ok as a first pass" (Phase 1 build) | First pass only; **menus, sound, music, caves 01–05, boulders, water, crawlers and glimmers not yet played on a Mac** |
 | 60 FPS on a reference Apple Silicon Mac | The in-game performance overlay (`` ` `` or F3) measures it | **Not yet measured** |
-| Rendering + key and mouse handling of the real app on Linux (Xvfb, Mesa software GL), editor included | Ebitengine `exp/vmhost` headless capture, run by hand | Observed in the cloud sessions; not macOS, not in CI ([D-014](docs/DECISIONS.md#d-014-ebitengine-expvmhost-headless-capture-assessed-not-adopted)) |
+| Rendering + key and mouse handling of the real app on Linux (Xvfb, Mesa software GL), editor included | Ebitengine `exp/vmhost` headless capture, run by hand; Glimmer Hollow frames captured from the real session and renderer by a scratch program | Observed in the cloud sessions; not macOS, not in CI ([D-014](docs/DECISIONS.md#d-014-ebitengine-expvmhost-headless-capture-assessed-not-adopted)) |
 
 ## Play it on a Mac (from source)
 
@@ -118,7 +121,7 @@ release milestone.
 
 WASD uses physical key positions, so it stays under the same fingers on non-US layouts.
 
-N plays the caves in order: `cave_01` to `cave_05`, then the `crawler_warren` and `test_cave` extras. To skip the menu and start a
+N plays the caves in order: `cave_01` to `cave_05`, then the `crawler_warren`, `glimmer_hollow` and `test_cave` extras. To skip the menu and start a
 cave directly, run `go run ./cmd/deepshift -cave cave_03`. To play your own cave file, run
 `go run ./cmd/deepshift -cave path/to/cave.json`; validation errors are printed to the terminal.
 
@@ -158,6 +161,17 @@ restarts.
 - A pocket or tunnel on a crawler's right is a safe place to wait: it only turns right when it must.
 - A falling boulder or crystal crushes it; a resting one doesn't.
 - It never steps into water, and water that reaches it drowns it.
+
+**Rules of thumb for glimmers:**
+
+- A glimmer is a crawler in a mirror: it keeps the wall on its **right**, so the safe pockets are on its
+  left.
+- It catches you exactly like a crawler, and standing next to one is just as safe.
+- Something **falling** onto a glimmer shatters it: its cell and every empty, dry cell around it fill with
+  crystals. A shattering never hurts you, and nothing but empty floor is changed.
+- The new crystals fall and roll from the next moment. One that forms right on top of you just rests there,
+  but one with a gap below it falls, and a falling crystal crushes.
+- A drowned glimmer leaves no crystals.
 
 The full rules are in [docs/PHYSICS.md](docs/PHYSICS.md).
 
@@ -257,7 +271,7 @@ docs/                 SPEC, ROADMAP, DECISIONS, PHYSICS
 ## Documentation
 
 - [docs/SPEC.md](docs/SPEC.md) — the game design and technical specification (source of truth)
-- [docs/PHYSICS.md](docs/PHYSICS.md) — the rules as actually implemented (rule version 4)
+- [docs/PHYSICS.md](docs/PHYSICS.md) — the rules as actually implemented (rule version 5)
 - [docs/DECISIONS.md](docs/DECISIONS.md) — decisions and deviations, with rationale
 - [docs/ROADMAP.md](docs/ROADMAP.md) — phase status, playtest checklist and follow-ups
 - [CLAUDE.md](CLAUDE.md) — working rules for coding agents

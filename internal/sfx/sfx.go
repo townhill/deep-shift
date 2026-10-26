@@ -26,7 +26,7 @@ const Peak = 0.5
 // loudness scales each cue's peak relative to Peak: rare, important events
 // are louder than frequent ones such as digging.
 var loudness = [CueCount]float64{
-	CueCrush: 1, CueCaught: 1, CueComplete: 0.9, CueExitOpen: 0.8, CueCollect: 0.7, CueCrawlerGone: 0.7,
+	CueCrush: 1, CueCaught: 1, CueComplete: 0.9, CueExitOpen: 0.8, CueCollect: 0.7, CueShatter: 0.8, CueCreatureGone: 0.7,
 	CueValve: 0.8, CueGate: 0.6, CueBlocked: 0.5, CueLand: 0.6, CuePush: 0.5, CueDig: 0.35,
 }
 
@@ -35,30 +35,31 @@ type Cue int
 
 // Cues, in the order ForEvents reports them.
 const (
-	CueCrush       Cue = iota // a falling object landed on the player
-	CueCaught                 // a crawler caught the player
-	CueComplete               // the cave is complete
-	CueExitOpen               // the quota is met
-	CueCollect                // a crystal was collected
-	CueCrawlerGone            // a crawler was crushed or drowned
-	CueValve                  // a valve turned
-	CueGate                   // gates moved
-	CueBlocked                // a refused move or action: sealed exit, deep water, jammed gate
-	CueLand                   // a falling object came to rest
-	CuePush                   // a boulder was pushed
-	CueDig                    // earth was dug
+	CueCrush        Cue = iota // a falling object landed on the player
+	CueCaught                  // a crawler or glimmer caught the player
+	CueComplete                // the cave is complete
+	CueExitOpen                // the quota is met
+	CueCollect                 // a crystal was collected
+	CueShatter                 // a glimmer shattered into crystals
+	CueCreatureGone            // a crawler was crushed or drowned, or a glimmer drowned
+	CueValve                   // a valve turned
+	CueGate                    // gates moved
+	CueBlocked                 // a refused move or action: sealed exit, deep water, jammed gate
+	CueLand                    // a falling object came to rest
+	CuePush                    // a boulder was pushed
+	CueDig                     // earth was dug
 	CueCount
 )
 
 func (c Cue) String() string {
-	return [...]string{"crush", "caught", "complete", "exit-open", "collect", "crawler-gone", "valve", "gate", "blocked",
-		"land", "push", "dig"}[c]
+	return [...]string{"crush", "caught", "complete", "exit-open", "collect", "shatter", "creature-gone", "valve", "gate",
+		"blocked", "land", "push", "dig"}[c]
 }
 
 // ForEvents returns the cues for one tick's events: each cue at most once,
 // in Cue order, so ten boulders landing together make one sound. Movement,
-// falling, rolling and crawlers walking make none: they happen too often to
-// be informative.
+// falling, rolling and creatures walking make none: they happen too often to
+// be informative, and nor do crystals forming: the shatter speaks for them.
 func ForEvents(events []sim.Event) []Cue {
 	var want [CueCount]bool
 	for _, e := range events {
@@ -73,8 +74,10 @@ func ForEvents(events []sim.Event) []Cue {
 			want[CueExitOpen] = true
 		case sim.EventCollected:
 			want[CueCollect] = true
-		case sim.EventCrawlerCrushed, sim.EventCrawlerDrowned:
-			want[CueCrawlerGone] = true
+		case sim.EventGlimmerShattered:
+			want[CueShatter] = true
+		case sim.EventCrawlerCrushed, sim.EventCrawlerDrowned, sim.EventGlimmerDrowned:
+			want[CueCreatureGone] = true
 		case sim.EventValveTurned:
 			want[CueValve] = true
 		case sim.EventGateOpened, sim.EventGateClosed:
@@ -122,7 +125,13 @@ func Samples(c Cue) []float64 {
 		buf = concat(tone(523.25, 70, 0.4, 14), tone(659.25, 70, 0.4, 14), tone(783.99, 70, 0.4, 14), tone(1046.5, 160, 0.45, 8))
 	case CueCollect:
 		buf = concat(tone(1318.5, 55, 0.45, 20), tone(1975.5, 110, 0.4, 14))
-	case CueCrawlerGone:
+	case CueShatter:
+		// A glassy crack, then a quick run of high chimes over a sparkle.
+		buf = mix(520,
+			concat(noise(25, 0.6, 0.9, 60, 79), tone(2093, 55, 0.4, 30), tone(2637, 55, 0.4, 30), tone(3136, 55, 0.4, 30),
+				tone(2637, 300, 0.35, 10)),
+			noise(520, 0.12, 0.8, 8, 83))
+	case CueCreatureGone:
 		// A wet pop: a rising chirp over a soft splash.
 		buf = mix(240, sweep(280, 900, 110, 0.5, 16), noise(240, 0.3, 0.12, 12, 73))
 	case CueValve:

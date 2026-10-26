@@ -942,3 +942,13 @@ func TestImportsArePure(t *testing.T) {
 		}
 	}
 }
+
+// Status lines name every creature with its facing, glimmers included,
+// though no brush paints a glimmer yet.
+func TestSymbolNamesCreatures(t *testing.T) {
+	for r, want := range map[rune]string{'↑': "crawler facing up", '◀': "glimmer facing left", '▼': "glimmer facing down"} {
+		if got := symbolName(r); got != want {
+			t.Errorf("symbolName(%q) = %q, want %q", r, got, want)
+		}
+	}
+}
