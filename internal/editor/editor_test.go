@@ -817,7 +817,7 @@ func randomInput(rng *rand.Rand) Input {
 	case 12:
 		in.Reach = true
 	case 13: // the valve and gate brushes, more often than chance
-		in.Brush = len(Palette) - rng.IntN(2)
+		in.Brush = gateBrush + 1 - rng.IntN(2)
 	case 14:
 		in.Copy = true
 	case 15:
@@ -953,8 +953,7 @@ func TestImportsArePure(t *testing.T) {
 	}
 }
 
-// Status lines name every creature with its facing, glimmers included,
-// though no brush paints a glimmer yet.
+// Status lines name every creature with its facing, glimmers included.
 func TestSymbolNamesCreatures(t *testing.T) {
 	for r, want := range map[rune]string{'↑': "crawler facing up", '◀': "glimmer facing left", '▼': "glimmer facing down"} {
 		if got := symbolName(r); got != want {

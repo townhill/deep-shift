@@ -226,6 +226,7 @@ func TestReachable(t *testing.T) {
 		{"deep water walls a region off", []string{"@~*", "1#~", "*~*"}, "x..|x..|x..", 1, false},
 		{"boulders, closed gates and valves block", []string{"@O*", "G##", "*V."}, "x..|...|...", 0, false},
 		{"open gates pass", []string{"@g*"}, "xxx", 1, false},
+		{"crawlers and glimmers are passed: they move on", []string{"@↑▶*"}, "xxxx", 1, false},
 		{"the exit is not passed", []string{"@E*"}, "xx.", 0, true},
 		{"unknown symbols block", []string{"@?*"}, "x..", 0, false},
 	}
@@ -277,8 +278,8 @@ func TestPaletteKeys(t *testing.T) {
 	for _, b := range Palette {
 		keys = append(keys, b.Key)
 	}
-	if got := strings.Join(keys, ""); got != "1234567890-" {
-		t.Fatalf("palette keys %q, want 1234567890- to match cmd/deepshift's brushKeys", got)
+	if got := strings.Join(keys, ""); got != "1234567890-=" {
+		t.Fatalf("palette keys %q, want 1234567890-= to match cmd/deepshift's brushKeys", got)
 	}
 	if Palette[gateBrush].Variants[0] != sim.SymbolGateClosed {
 		t.Fatal("gateBrush is not the gate brush")

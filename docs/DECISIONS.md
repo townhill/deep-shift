@@ -1238,3 +1238,56 @@ Numbered D-060 because the arcade music (D-055) and the glimmers (D-056 to D-059
     be.
 - **One fault found and fixed:** the bar still said "Pasting" after Esc ended paste mode.
 - This is Linux/OpenGL evidence only, not a Mac test.
+
+## D-061: The glimmer brush (follow-up F-33)
+
+- **A twelfth brush, Glimmer, on `=`,** after the gate. Every key from 1 to 9, 0 and - was taken (D-048), and
+  `=` is the next key along the keyboard's top row, so the palette still reads in key order from left to
+  right. It is wired like the others: `ebiten.KeyEqual` in `brushKeys`, and the slot is labelled `=`.
+- **Its variants turn clockwise,** ▲ ▶ ▼ ◀, exactly as the crawler's do (D-048): pressing `=` again, or
+  clicking its slot, turns it.
+- **Not on the crawler brush.** A glimmer is a different creature, the crawler's mirror (D-056), with its own
+  symbols and sprite. Eight facings on one key would put a facing up to seven presses away, and the slot
+  and status line would have to switch between two creatures. With a brush each, every facing is at most
+  three presses away, as for water and the crawler.
+- **Everything else follows from the brush being in `Palette`:** Option-click on a glimmer picks the brush
+  with that facing; a box or flood fill places a glimmer in every cell, since only the player start, the
+  exit and valves place one (D-048, D-052); the preview under the pointer shows it; and painting one into
+  a cave below format version 5 raises the version with the usual warning (D-047), as pasting one already
+  did (D-060). Nothing in `editor.go` changed.
+- **The reach overlay** already entered glimmer cells as it does crawlers' (D-053): both move on. Its
+  comment now says so, and the reach test has a row with both creatures.
+- **The bottom bar.** The text after the palette starts one slot (40 px) further right, which leaves about
+  76 characters for the cell description and the problem list, from 82. Lines were already clipped with
+  "..." at the bar's edge, so nothing overflows.
+- **Keyboards other than US.** `KeyEqual` names the physical key right of `-` on a US layout. On other
+  layouts that key may carry another label (on a German Mac keyboard it is `´`), so the slot label can
+  disagree with the key cap there. Clicking the slot always works. Checking what the key is on a British,
+  German or French keyboard is on the Mac checklist, alongside rebindable keys (F-8).
+- **No rule or format change:** rule version 5 and cave format version 5 stay, and every golden replay still
+  matches.
+- **Evidence:** headless tests in `internal/editor`: `=` chooses a glimmer facing up and turns it through all
+  four facings and back; a glimmer painted into a version 4 cave saves as version 5 and the saved file
+  loads with `level.Parse`; Option-click on each facing picks that facing; a box and a flood fill of
+  glimmers cover their area. Three mutations were each caught by a test: the key changed to `+`, the
+  variants turned anticlockwise, and `level.SymbolVersion` no longer counting glimmers as version 5.
+
+## D-014 addendum: glimmer brush headless capture (2026-10-26)
+
+- The by-hand `exp/vmhost` setup (Linux, Xvfb, Mesa software GL; the driver copied into the ignored
+  `.vmdriver/`, nothing committed) drove the unmodified app with `-edit new`, saving a frame after each
+  step:
+  - the bottom bar shows twelve slots, the new one labelled `=` and drawn with the glimmer sprite, and the
+    help text beside it still fits, clipped with "..." at the bar's edge as before;
+  - `=` ringed the twelfth slot, the top bar read "Brush =: glimmer facing up", and the faint preview under
+    the pointer was a glimmer;
+  - `=` again read "glimmer facing right"; a click painted it, and the preview followed the pointer to the
+    next cell with "unsaved" in the status;
+  - a Shift-drag with the brush facing down filled a 4×3 box with twelve glimmers, the cell under the
+    pointer described as "glimmer facing down";
+  - after choosing the wall, Alt-click on the first glimmer picked "glimmer facing right" and ringed the
+    `=` slot again;
+  - a click on the slot turned it to "facing down".
+- No fault was found. Saving and reloading is covered by the headless test, not this capture.
+- This is Linux/OpenGL evidence only, not a Mac test. Which key cap `KeyEqual` is on a non-US Mac keyboard
+  is on the Mac checklist.

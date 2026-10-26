@@ -14,9 +14,11 @@ type Brush struct {
 	Variants []rune
 }
 
-// Palette lists the brushes in key order: 1 to 9, then 0 and -. A valve
+// Palette lists the brushes in key order: 1 to 9, then 0, - and =. A valve
 // brush paints a shut valve with a mechanism of its own; a gate brush paints
-// a gate linked to the selected valve (D-052).
+// a gate linked to the selected valve (D-052). Glimmers have a brush of their
+// own rather than sharing the crawler's (D-061): they are a different
+// creature, and eight facings on one key would be too many presses.
 var Palette = []Brush{
 	{"Wall", "1", []rune{sim.SymbolWall}},
 	{"Earth", "2", []rune{sim.SymbolEarth}},
@@ -29,6 +31,7 @@ var Palette = []Brush{
 	{"Crawler", "9", []rune{'↑', '→', '↓', '←'}}, // clockwise
 	{"Valve", "0", []rune{sim.SymbolValveShut}},
 	{"Gate", "-", []rune{sim.SymbolGateClosed}},
+	{"Glimmer", "=", []rune{'▲', '▶', '▼', '◀'}}, // clockwise
 }
 
 // gateBrush is the gate brush's index in Palette.

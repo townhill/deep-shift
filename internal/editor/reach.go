@@ -14,7 +14,8 @@ type reach struct {
 // reachable searches from every player start in cells (a grid w wide).
 //
 //   - Entered: open floor and open gates, unless the water there is deep;
-//     earth (dug); crystals (collected); crawlers (they move on).
+//     earth (dug); crystals (collected); crawlers and glimmers (they move
+//     on).
 //   - Blocked: walls, closed gates, valves, deep water, boulders and cells
 //     with unknown symbols.
 //   - The exit is reached but not passed: entering it ends the cave.
