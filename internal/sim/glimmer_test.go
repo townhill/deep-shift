@@ -258,9 +258,11 @@ func shatterSim(t *testing.T, obj rune, set map[Pos]rune, mechs []Mechanism) *Si
 
 // A falling boulder or crystal shatters a glimmer: the glimmer's cell and
 // every empty, dry floor cell around it hold a resting crystal, and nothing
-// else in the block changes. The object comes to rest where it was.
+// else in the block changes. A boulder turns to crystal with them; a crystal
+// comes to rest where it was. Nothing lands.
 func TestFallingObjectShattersAGlimmer(t *testing.T) {
-	block := []Pos{{1, 1}, {3, 1}, {1, 2}, {2, 2}, {3, 2}, {1, 3}, {2, 3}, {3, 3}}
+	object := Pos{2, 1}
+	block := []Pos{{1, 1}, object, {3, 1}, {1, 2}, {2, 2}, {3, 2}, {1, 3}, {2, 3}, {3, 3}}
 	gate := []Mechanism{{Valve: Pos{5, 2}, Gates: []Pos{{1, 1}}}}
 	tests := []struct {
 		name  string
@@ -305,14 +307,14 @@ func TestFallingObjectShattersAGlimmer(t *testing.T) {
 				}
 				s := shatterSim(t, obj, set, tt.mechs)
 				before := s.Cell(tt.at)
-				object, _ := CellForSymbol(obj)
-				want := []Event{{Kind: EventGlimmerShattered, Pos: Pos{2, 2}, From: Pos{2, 1}, Object: object.Occupant}}
+				falling, _ := CellForSymbol(obj)
+				want := []Event{{Kind: EventGlimmerShattered, Pos: Pos{2, 2}, From: object, Object: falling.Occupant}}
 				for _, p := range block {
-					if p != tt.at || tt.forms {
+					switch {
+					case p == object && falling.Occupant == OccupantBoulder, p != object && (p != tt.at || tt.forms):
 						want = append(want, Event{Kind: EventCrystalFormed, Pos: p})
 					}
 				}
-				want = append(want, Event{Kind: EventLanded, Pos: Pos{2, 1}, Object: object.Occupant})
 				if ev := s.Step(Input{}); !slices.Equal(ev, want) {
 					t.Fatalf("events\n%v\nwant\n%v\n%s", ev, want, s.ASCII())
 				}
@@ -328,8 +330,8 @@ func TestFallingObjectShattersAGlimmer(t *testing.T) {
 						t.Errorf("%s holds %+v, want a resting crystal", p, c)
 					}
 				}
-				if c := s.Cell(Pos{2, 1}); c.Occupant != object.Occupant || c.Falling {
-					t.Errorf("the %s ended as %+v, want it resting at (2,1)", object.Occupant, c)
+				if c := s.Cell(object); c.Occupant != OccupantCrystal || c.Falling {
+					t.Errorf("the falling %s ended as %+v, want a resting crystal at %s", falling.Occupant, c, object)
 				}
 				if s.Glimmers() > 1 || s.Glimmers() == 1 && tt.r != '▲' {
 					t.Errorf("the glimmer survived:\n%s", s.ASCII())
@@ -390,8 +392,8 @@ func TestShatteringAtTheCaveEdge(t *testing.T) {
 		t.Fatal(err)
 	}
 	ev := s.Step(Input{})
-	wantKinds(t, ev, EventGlimmerShattered, EventCrystalFormed, EventCrystalFormed, EventLanded)
-	if ev[1].Pos != (Pos{0, 1}) || ev[2].Pos != (Pos{1, 1}) {
+	wantKinds(t, ev, EventGlimmerShattered, EventCrystalFormed, EventCrystalFormed, EventCrystalFormed)
+	if ev[1].Pos != (Pos{0, 0}) || ev[2].Pos != (Pos{0, 1}) || ev[3].Pos != (Pos{1, 1}) {
 		t.Fatalf("events %v", ev)
 	}
 }

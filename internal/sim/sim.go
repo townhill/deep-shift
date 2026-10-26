@@ -204,7 +204,8 @@ func (s *Sim) stepGravity(events []Event) []Event {
 }
 
 // updateFalling applies, in order: fall into empty floor below; if already
-// falling, crush the player or a crawler below, or shatter a glimmer below;
+// falling, crush the player or a crawler below, or shatter a glimmer below
+// (a boulder turning to crystal as it does);
 // roll off a rounded blocker (left side first, then right) when the side cell
 // and the cell below it are both empty; otherwise come to rest.
 func (s *Sim) updateFalling(p Pos, events []Event) []Event {
@@ -231,12 +232,15 @@ func (s *Sim) updateFalling(p Pos, events []Event) []Event {
 				Event{Tick: st.tick, Kind: EventCrawlerCrushed, Pos: below, From: p, Object: obj},
 				Event{Tick: st.tick, Kind: EventFell, Pos: below, From: p, Object: obj})
 		case bc.Occupant == OccupantGlimmer && o.Falling:
-			// A falling object shatters a glimmer into crystals and comes to
-			// rest on them.
-			o.Falling = false
+			// A falling object shatters a glimmer into crystals and is part
+			// of the shattering: a boulder turns to crystal with the rest of
+			// the block, a crystal comes to rest among them.
 			events = append(events, Event{Tick: st.tick, Kind: EventGlimmerShattered, Pos: below, From: p, Object: obj})
-			events = s.shatter(below, events)
-			return append(events, Event{Tick: st.tick, Kind: EventLanded, Pos: p, Object: obj})
+			o.Falling = false
+			if obj == OccupantBoulder {
+				o.Occupant = OccupantNone
+			}
+			return s.shatter(below, events)
 		case bc.Occupant.Rounded():
 			for _, d := range [...]Dir{DirLeft, DirRight} {
 				side := p.Add(d)
@@ -347,12 +351,13 @@ func (s *Sim) drownCreatures(events []Event) []Event {
 
 // shatter removes the glimmer at g and leaves a crystal in its cell and in
 // every empty, dry floor cell of the 3×3 block around it, in row-major
-// order. Nothing else in the block changes: earth, walls, the exit, gates,
-// valves, objects, creatures, the player and cells holding water are left as
-// they are, so water is conserved. A glimmer's cell is always dry (water
-// drowns it in the step it arrives), so at least one crystal forms. The new
-// crystals rest and sit out the rest of this gravity step, like a pushed
-// boulder.
+// order. A shattering boulder has already been removed from its cell above g,
+// so that cell is among them. Nothing else in the block changes: earth,
+// walls, the exit, gates, valves, other objects, creatures, the player and
+// cells holding water are left as they are, so water is conserved. A
+// glimmer's cell is always dry (water drowns it in the step it arrives), so
+// at least one crystal forms. The new crystals rest and sit out the rest of
+// this gravity step, like a pushed boulder.
 func (s *Sim) shatter(g Pos, events []Event) []Event {
 	c := &s.st.cells[s.initial.Index(g)]
 	c.Occupant, c.Facing = OccupantNone, DirNone

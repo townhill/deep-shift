@@ -78,8 +78,8 @@ func TestForEventsMapsDedupesAndOrders(t *testing.T) {
 		{"crushed and drowned crawlers, one sound", []sim.Event{ev(sim.EventCrawlerCrushed), ev(sim.EventFell), ev(sim.EventCrawlerDrowned)},
 			[]Cue{CueCreatureGone}},
 		{"a drowned glimmer pops like a crawler", []sim.Event{ev(sim.EventGlimmerDrowned)}, []Cue{CueCreatureGone}},
-		{"a shattered glimmer chimes once over its landing", []sim.Event{ev(sim.EventGlimmerShattered), ev(sim.EventCrystalFormed),
-			ev(sim.EventCrystalFormed), ev(sim.EventLanded)}, []Cue{CueShatter, CueLand}},
+		{"a shattered glimmer chimes once for all its crystals", []sim.Event{ev(sim.EventGlimmerShattered), ev(sim.EventCrystalFormed),
+			ev(sim.EventCrystalFormed), ev(sim.EventCrystalFormed)}, []Cue{CueShatter}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

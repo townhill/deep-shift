@@ -17,13 +17,14 @@ var (
 	hollowVaultLock = sim.Pos{X: 6, Y: 4}
 	hollowSluice    = sim.Pos{X: 15, Y: 9}
 	// hollowShards are the cells the vault glimmer's crystals form in, in
-	// row-major order: beside the gate, its own cell, below the vault walls.
-	hollowShards = []sim.Pos{{X: 8, Y: 5}, {X: 10, Y: 5}, {X: 9, Y: 6}, {X: 8, Y: 7}, {X: 10, Y: 7}}
-	// hollowBasin is where the two crystals formed below the vault walls come
-	// to rest.
-	hollowBasin    = []sim.Pos{{X: 8, Y: 9}, {X: 10, Y: 9}}
-	hollowPockets  = []sim.Pos{{X: 18, Y: 5}, {X: 28, Y: 5}, {X: 23, Y: 8}} // beside the ring, on its glimmer's left
-	hollowCorridor = []sim.Pos{{X: 14, Y: 13}, {X: 15, Y: 13}, {X: 16, Y: 13}, {X: 17, Y: 13}, {X: 18, Y: 13}}
+	// row-major order: beside the gate, the gate itself (where the boulder
+	// turns to crystal), its own cell, below the vault walls.
+	hollowShards = []sim.Pos{{X: 8, Y: 5}, {X: 9, Y: 5}, {X: 10, Y: 5}, {X: 9, Y: 6}, {X: 8, Y: 7}, {X: 10, Y: 7}}
+	// hollowCollectable are where the six vault crystals can be taken: four
+	// where they formed, and the two that fall into the basin.
+	hollowCollectable = []sim.Pos{{X: 8, Y: 5}, {X: 9, Y: 5}, {X: 10, Y: 5}, {X: 9, Y: 6}, {X: 8, Y: 9}, {X: 10, Y: 9}}
+	hollowPockets     = []sim.Pos{{X: 18, Y: 5}, {X: 28, Y: 5}, {X: 23, Y: 8}} // beside the ring, on its glimmer's left
+	hollowCorridor    = []sim.Pos{{X: 14, Y: 13}, {X: 15, Y: 13}, {X: 16, Y: 13}, {X: 17, Y: 13}, {X: 18, Y: 13}}
 )
 
 // valveTurnedAt matches the turning of the valve at p.
@@ -67,14 +68,15 @@ func TestGlimmerHollowRouteShattersOneGlimmerAndDrownsAnother(t *testing.T) {
 	if len(drowned) != 1 || !slices.Contains(hollowCorridor, drowned[0].Pos) {
 		t.Errorf("drowned %v, want one glimmer drowned in the corridor", drowned)
 	}
-	for _, p := range append([]sim.Pos{hollowShards[0], hollowShards[1]}, hollowBasin...) {
+	// Nothing is sealed in the vault: the route takes all six of its crystals,
+	// and the boulder is gone.
+	for _, p := range hollowCollectable {
 		if !slices.Contains(collected, p) {
 			t.Errorf("the route never collected the vault crystal at %s (collected %v)", p, collected)
 		}
 	}
-	// The fifth crystal stays sealed in the vault under the boulder.
-	if res.Sim.Cell(hollowVault).Occupant != sim.OccupantCrystal || res.Sim.Cell(hollowVaultGate).Occupant != sim.OccupantBoulder {
-		t.Errorf("the vault does not hold its sealed crystal under the boulder:\n%s", res.Sim.ASCII())
+	if res.Sim.Boulders() != 0 || res.Collected != 11 {
+		t.Errorf("%d boulders left and %d crystals collected, want none and eleven:\n%s", res.Sim.Boulders(), res.Collected, res.Sim.ASCII())
 	}
 	if res.Sim.Glimmers() != 1 {
 		t.Errorf("%d glimmers left, want the ring's one:\n%s", res.Sim.Glimmers(), res.Sim.ASCII())
@@ -158,10 +160,11 @@ func TestGlimmerHollowVaultGlimmerIsBoxedIn(t *testing.T) {
 }
 
 // Opened at any moment, the vault drops its boulder onto the glimmer, which
-// shatters into the same five crystals every time: gravity runs before the
-// creatures in every tick, so the boulder fills the open gate before the
-// glimmer could leave through it. Two crystals rest beside the gate, two
-// fall into the basin and one stays sealed under the boulder.
+// shatters into the same six crystals every time, the boulder turning to one
+// of them: gravity runs before the creatures in every tick, so the boulder
+// fills the open gate before the glimmer could leave through it. Two crystals
+// rest beside the gate, one in it, one in the glimmer's cell below, and two
+// fall into the basin.
 func TestGlimmerHollowVaultShattersWhateverTheTiming(t *testing.T) {
 	turn := fixtureEventTick(t, hollowComplete, valveTurnedAt(hollowVaultLock))
 	for k := range uint64(2 * sim.CrawlerIntervalTicks) {
@@ -183,13 +186,13 @@ func TestGlimmerHollowVaultShattersWhateverTheTiming(t *testing.T) {
 			t.Fatalf("k=%d: %d shattered, crystals formed at %v, status %s:\n%s",
 				k, countKind(ev, sim.EventGlimmerShattered), formed, s.Status(), s.ASCII())
 		}
-		for _, p := range append([]sim.Pos{hollowShards[0], hollowShards[1], hollowVault}, hollowBasin...) {
+		for _, p := range hollowCollectable {
 			if c := s.Cell(p); c.Occupant != sim.OccupantCrystal || c.Falling {
 				t.Fatalf("k=%d: %s holds %+v, want a resting crystal:\n%s", k, p, c, s.ASCII())
 			}
 		}
-		if s.Cell(hollowVaultGate).Occupant != sim.OccupantBoulder {
-			t.Fatalf("k=%d: the boulder is not in the vault gate:\n%s", k, s.ASCII())
+		if s.Boulders() != 0 {
+			t.Fatalf("k=%d: the boulder did not turn to crystal:\n%s", k, s.ASCII())
 		}
 	}
 }
@@ -224,8 +227,8 @@ func TestGlimmerHollowFloodDrownsTheGlimmerWhateverTheTiming(t *testing.T) {
 }
 
 // The quota needs both lessons: the crystals placed in the cave fall short,
-// and so do the ones outside the ring's pockets plus the four vault crystals
-// the player can reach (the fifth stays sealed; see the route test).
+// and so do the ones outside the ring's pockets plus all six vault crystals
+// (the route test shows the player can reach every one).
 func TestGlimmerHollowQuotaNeedsTheVaultAndTheRing(t *testing.T) {
 	l := freshCave(t, "glimmer_hollow")
 	c := l.Cave()
@@ -240,7 +243,7 @@ func TestGlimmerHollowQuotaNeedsTheVaultAndTheRing(t *testing.T) {
 		}
 		elsewhere--
 	}
-	if reachable := len(hollowShards) - 1; elsewhere+reachable >= l.RequiredCrystals {
+	if reachable := len(hollowCollectable); elsewhere+reachable >= l.RequiredCrystals {
 		t.Fatalf("%d crystals outside the pockets and %d from the vault meet the quota of %d without the ring",
 			elsewhere, reachable, l.RequiredCrystals)
 	}
